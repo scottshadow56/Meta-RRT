@@ -49,6 +49,9 @@ export default function App() {
   const [contextVehicles, setContextVehicles] = useState<any[]>([]);
   const [contextQueryNode, setContextQueryNode] = useState<string>('');
   const [contextQueryTarget, setContextQueryTarget] = useState<string>('');
+  const [contextSelectedAnswerText, setContextSelectedAnswerText] = useState<string>('');
+  const [contextSelectedAnswerLetter, setContextSelectedAnswerLetter] = useState<string>('');
+  const [contextIsSubmitted, setContextIsSubmitted] = useState<boolean>(false);
 
   // Dimensional Space setting
   const [dimension, setDimension] = useState<DimensionCount>(2);
@@ -88,7 +91,7 @@ export default function App() {
   };
 
   const handleResetStats = () => {
-    if (window.confirm("Are you sure you want to flush all neural logs and reset your fluid IQ metrics? This cannot be undone.")) {
+    if (window.confirm("Are you sure you want to flush all neural logs and reset your training metrics? This cannot be undone.")) {
       handleUpdateStats(defaultStats);
     }
   };
@@ -116,6 +119,9 @@ export default function App() {
     contextVehicles: any[];
     queryNode?: string;
     queryTarget?: string;
+    selectedAnswerText?: string;
+    selectedAnswerLetter?: string;
+    isSubmitted?: boolean;
   }) => {
     setContextDimension(details.dimension);
     setContextBaseVector(details.baseVector);
@@ -127,6 +133,9 @@ export default function App() {
     setContextVehicles(details.contextVehicles || []);
     setContextQueryNode(details.queryNode || '');
     setContextQueryTarget(details.queryTarget || '');
+    setContextSelectedAnswerText(details.selectedAnswerText || '');
+    setContextSelectedAnswerLetter(details.selectedAnswerLetter || '');
+    setContextIsSubmitted(!!details.isSubmitted);
   };
 
   // Run Constraint Solver Dynamically
@@ -144,19 +153,24 @@ export default function App() {
     }
   };
 
-  // Quick helper to estimate fluid IQ metric
-  const estimatedIQ = useMemo(() => {
-    let baseIQ = 100;
-    stats.history.forEach(h => {
-      if (!h.correct) return;
-      let weight = 1;
-      if (h.difficulty === 'Intermediate') weight = 2.5;
-      else if (h.difficulty === 'Advanced') weight = 5.5;
-      else if (h.difficulty === 'Master') weight = 10;
-      const speedFactor = h.timeMs < 25000 ? 1.2 : 1.0;
-      baseIQ += weight * 0.4 * speedFactor;
-    });
-    return Math.min(160, Math.round(baseIQ));
+  // Questions answered today and average response time for today
+  const todayStats = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString();
+    const todayItems = stats.history.filter(h => new Date(h.timestamp).toLocaleDateString() === todayStr);
+    const answeredCount = todayItems.length;
+    const correctCount = todayItems.filter(h => h.correct).length;
+    
+    let avgSpeedSec = 0;
+    if (answeredCount > 0) {
+      const totalTimeMs = todayItems.reduce((acc, h) => acc + (h.timeMs || 0), 0);
+      avgSpeedSec = Number((totalTimeMs / answeredCount / 1000).toFixed(1));
+    }
+    
+    return {
+      answeredCount,
+      correctCount,
+      avgSpeedSec,
+    };
   }, [stats.history]);
 
   return (
@@ -191,8 +205,8 @@ export default function App() {
           {/* Quick HUD tracker */}
           <div className="flex flex-wrap items-center gap-4 text-xs font-sans">
             <div className="flex items-center gap-1.5 bg-theme-card border border-theme-comp px-3 py-1.5 font-bold">
-              <Trophy className="w-3.5 h-3.5 text-theme-comp" />
-              <span>Fluid IQ: <strong className="font-mono text-theme-accent">{estimatedIQ}</strong></span>
+              <Activity className="w-3.5 h-3.5 text-theme-comp" />
+              <span>Today: <strong className="font-mono text-theme-accent">{todayStats.answeredCount}</strong> Answered <span className="opacity-40">|</span> <span className="text-theme-text/85">Speed:</span> <strong className="font-mono text-theme-accent">{todayStats.avgSpeedSec}s</strong></span>
             </div>
             <div className="flex items-center gap-1.5 bg-theme-card border border-theme-comp px-3 py-1.5 font-bold">
               <Zap className="w-3.5 h-3.5 text-amber-500" />
@@ -324,6 +338,9 @@ export default function App() {
                   contextVehicles={contextVehicles}
                   queryNode={contextQueryNode}
                   queryTarget={contextQueryTarget}
+                  selectedAnswerText={contextSelectedAnswerText}
+                  selectedAnswerLetter={contextSelectedAnswerLetter}
+                  isSubmitted={contextIsSubmitted}
                 />
               ) : (
                 <Visualizer
@@ -347,7 +364,7 @@ export default function App() {
           <span>RRT Neural Framework • Active Engine Module V1.0 (Relative Vectors)</span>
           <span className="flex items-center gap-1.5">
             <Network className="w-3.5 h-3.5" />
-            Designed to push fluid IQ limits using absolute dimensional vector projection.
+            Designed to track cognitive daily progression with absolute dimensional coordinate mapping.
           </span>
         </div>
       </footer>
