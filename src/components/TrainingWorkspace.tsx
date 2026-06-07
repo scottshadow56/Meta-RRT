@@ -9,6 +9,7 @@ import {
 interface ContextOption {
   text: string;
   isCorrect: boolean;
+  vector?: number[];
 }
 
 interface ContextPuzzle {
@@ -62,6 +63,9 @@ interface TrainingWorkspaceProps {
     contextVehicles: any[];
     queryNode?: string;
     queryTarget?: string;
+    selectedAnswerText?: string;
+    selectedAnswerLetter?: string;
+    isSubmitted?: boolean;
   }) => void;
   isSubmitted: boolean;
   setIsSubmitted: (isSub: boolean) => void;
@@ -790,9 +794,36 @@ export function generateContextPuzzle(
     }
   }
 
+  const CARDINAL_VECTOR_MAP: Record<string, number[]> = {
+    'North': [1, 0, 0, 0],
+    'South': [-1, 0, 0, 0],
+    'East': [0, 1, 0, 0],
+    'West': [0, -1, 0, 0],
+    'Northeast': [1, 1, 0, 0],
+    'Northwest': [1, -1, 0, 0],
+    'Southeast': [-1, 1, 0, 0],
+    'Southwest': [-1, -1, 0, 0],
+    'North-Above': [1, 0, 1, 0],
+    'South-Below': [-1, 0, -1, 0],
+    'Northeast-Above': [1, 1, 1, 0],
+    'Southwest-Below': [-1, -1, -1, 0],
+    'North-Scaled': [2, 0, 0, 0],
+    'South-Above-Scaled': [-2, 0, -2, 0],
+    'East-After': [0, 1, 0, 1],
+    'West-Before': [0, -1, 0, -1],
+    'North-After': [1, 0, 0, 1],
+    'South-Before': [-1, 0, 0, -1],
+    'Northeast-After': [1, 1, 0, 1],
+    'Southwest-Before-Scaled': [-2, -2, 0, -2]
+  };
+
   const options = [
-    { text: correctOptionText, isCorrect: true },
-    ...Array.from(incorrectChoices).map(txt => ({ text: txt, isCorrect: false }))
+    { text: correctOptionText, isCorrect: true, vector: projectedVector },
+    ...Array.from(incorrectChoices).map(txt => ({
+      text: txt,
+      isCorrect: false,
+      vector: CARDINAL_VECTOR_MAP[txt] || [1, 0, 0, 0]
+    }))
   ].sort(() => Math.random() - 0.5);
 
   const nodeDefinitions = rawGeneratedAxes.map(ax => ({
@@ -911,27 +942,17 @@ export default function TrainingWorkspace({
       onUpdateContextDetails({
         dimension: selectedDim,
         baseVector: newCtxPuzzle.baseOffsetVector,
-        projectedVector: newCtxPuzzle.projectedVector,
+        projectedVector: newCtxPuzzle.baseOffsetVector,
         baseRelationName: newCtxPuzzle.baseRelation,
-        projectedRelationName: newCtxPuzzle.projectedRelation,
+        projectedRelationName: newCtxPuzzle.baseRelation,
         nodeDefinitions: newCtxPuzzle.nodeDefinitions,
         contextVehicles: newCtxPuzzle.contextVehicles,
         queryNode: newCtxPuzzle.queryNode,
         queryTarget: newCtxPuzzle.queryTarget,
-        activeModifiers: (() => {
-          const aggregateScales = [1, 1, 1, 1];
-          newCtxPuzzle.contextVehicles.forEach(cv => {
-            if (newCtxPuzzle.activeContextGroup.includes(cv.id)) {
-              const scaleFactor = cv.effectiveMultiplier !== undefined ? cv.effectiveMultiplier : cv.shiftMultiplier;
-              for (let idx = 0; idx < selectedDim; idx++) {
-                if (cv.boundVector[idx] !== 0) {
-                  aggregateScales[idx] *= scaleFactor;
-                }
-              }
-            }
-          });
-          return aggregateScales;
-        })()
+        selectedAnswerText: '',
+        selectedAnswerLetter: '',
+        isSubmitted: false,
+        activeModifiers: [1, 1, 1, 1]
       });
     }
   };
@@ -975,6 +996,41 @@ export default function TrainingWorkspace({
       setSelectedAnswerIdx(idx);
     } else {
       setSelectedCtxAnswerIdx(idx);
+
+      if (currentCtxPuzzle) {
+        const selectedOpt = currentCtxPuzzle.options[idx];
+        const optLetter = String.fromCharCode(65 + idx);
+        
+        // Use stored vector or default to projectedVector
+        const optVector = selectedOpt && selectedOpt.vector ? selectedOpt.vector : currentCtxPuzzle.projectedVector;
+        
+        const aggregateScales = [1, 1, 1, 1];
+        for (let idxDim = 0; idxDim < selectedDim; idxDim++) {
+          const baseVal = currentCtxPuzzle.baseOffsetVector[idxDim] ?? 0;
+          const optVal = optVector[idxDim] ?? 0;
+          if (baseVal !== 0) {
+            aggregateScales[idxDim] = optVal / baseVal;
+          } else {
+            aggregateScales[idxDim] = optVal !== 0 ? optVal : 1;
+          }
+        }
+        
+        onUpdateContextDetails({
+          dimension: selectedDim,
+          baseVector: currentCtxPuzzle.baseOffsetVector,
+          projectedVector: optVector,
+          baseRelationName: currentCtxPuzzle.baseRelation,
+          projectedRelationName: selectedOpt.text,
+          nodeDefinitions: currentCtxPuzzle.nodeDefinitions,
+          contextVehicles: currentCtxPuzzle.contextVehicles,
+          queryNode: currentCtxPuzzle.queryNode,
+          queryTarget: currentCtxPuzzle.queryTarget,
+          selectedAnswerText: selectedOpt.text,
+          selectedAnswerLetter: optLetter,
+          isSubmitted: false,
+          activeModifiers: aggregateScales
+        });
+      }
     }
   };
 
@@ -1067,6 +1123,39 @@ export default function TrainingWorkspace({
       };
 
       onUpdateStats(newStats);
+
+      // Trigger update with the correct/solved projection on submission!
+      const correctOption = currentCtxPuzzle.options.find(o => o.isCorrect) || selectedOption;
+      const correctIdx = currentCtxPuzzle.options.findIndex(o => o.isCorrect);
+      const correctLetter = String.fromCharCode(65 + (correctIdx >= 0 ? correctIdx : selectedCtxAnswerIdx));
+      
+      const optVector = currentCtxPuzzle.projectedVector;
+      const aggregateScales = [1, 1, 1, 1];
+      for (let idxDim = 0; idxDim < selectedDim; idxDim++) {
+        const baseVal = currentCtxPuzzle.baseOffsetVector[idxDim] ?? 0;
+        const optVal = optVector[idxDim] ?? 0;
+        if (baseVal !== 0) {
+          aggregateScales[idxDim] = optVal / baseVal;
+        } else {
+          aggregateScales[idxDim] = optVal !== 0 ? optVal : 1;
+        }
+      }
+
+      onUpdateContextDetails({
+        dimension: selectedDim,
+        baseVector: currentCtxPuzzle.baseOffsetVector,
+        projectedVector: optVector,
+        baseRelationName: currentCtxPuzzle.baseRelation,
+        projectedRelationName: correctOption.text,
+        nodeDefinitions: currentCtxPuzzle.nodeDefinitions,
+        contextVehicles: currentCtxPuzzle.contextVehicles,
+        queryNode: currentCtxPuzzle.queryNode,
+        queryTarget: currentCtxPuzzle.queryTarget,
+        selectedAnswerText: correctOption.text,
+        selectedAnswerLetter: correctLetter,
+        isSubmitted: true,
+        activeModifiers: aggregateScales
+      });
     }
   };
 
@@ -1668,7 +1757,7 @@ export default function TrainingWorkspace({
                   </p>
                   
                   <div className="mt-3.5 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-3 flex-wrap gap-2">
-                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help visualising the transformations?</span>
                     <button
                       onClick={() => setShowCtxExplanation(prev => !prev)}
                       className="px-3 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-[11px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"

@@ -25,6 +25,9 @@ interface ContextProjectorProps {
   }[];
   queryNode?: string;
   queryTarget?: string;
+  selectedAnswerText?: string;
+  selectedAnswerLetter?: string;
+  isSubmitted?: boolean;
 }
 
 export default function ContextProjector({
@@ -37,7 +40,10 @@ export default function ContextProjector({
   nodeDefinitions = [],
   contextVehicles = [],
   queryNode = '',
-  queryTarget = ''
+  queryTarget = '',
+  selectedAnswerText = '',
+  selectedAnswerLetter = '',
+  isSubmitted = false
 }: ContextProjectorProps) {
   // Toggle between Node Workspace projections and Context Shift Space vectors
   const [projectorTab, setProjectorTab] = useState<'nodes' | 'context'>('nodes');
@@ -283,6 +289,29 @@ export default function ContextProjector({
                 <strong>Workspace Map Legend:</strong> Slate-colored dashed vectors represent the reference <strong>Base/Classic</strong> coordinates. Blue/Indigo solid vectors depict the mutated <strong>Context-Projected</strong> coordinates under the active relationships.
               </span>
             </div>
+
+            {selectedAnswerLetter && (
+              <div className={`p-3 border border-dashed text-xs font-mono uppercase tracking-wide flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-none shadow-sm select-text ${
+                isSubmitted
+                  ? 'bg-green-500/10 border-green-600/50 text-green-500'
+                  : 'bg-theme-comp/10 border-theme-comp text-theme-accent'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-theme-comp" />
+                  <span>
+                    {isSubmitted ? (
+                      <strong>PROJECTION SYSTEM SOLVED</strong>
+                    ) : (
+                      <strong>DRAFT ANSWER PROJECTION PREVIEW</strong>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-theme-bg/60 px-2.5 py-1 border border-theme-comp/10 text-[11px] font-bold">
+                  <span className="opacity-75">REPRESENTING OPTION [{selectedAnswerLetter}]:</span>
+                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-theme-card border border-theme-comp/20" style={{ color: 'var(--main-color)' }}>{selectedAnswerText}</span>
+                </div>
+              </div>
+            )}
 
             <div className={`grid gap-4 ${dimension > 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 max-w-xl mx-auto'}`}>
               
