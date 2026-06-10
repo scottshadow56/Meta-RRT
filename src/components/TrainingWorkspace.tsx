@@ -179,7 +179,7 @@ export function generateContextPuzzle(
     anchorCount: number;
     anchorDefinitionsCount?: number;
     shiftsPerAnchor: number;
-    interrelation: 'chain' | 'cross';
+    interrelation: 'chain' | 'cross' | 'mixed';
     scaleType: 'integer' | 'mixed';
     activeContextsCount?: string | number;
     scrambleSetting?: 'none' | 'partial' | 'full';
@@ -543,7 +543,8 @@ export function generateContextPuzzle(
           representedVector: [0, 0, 0, 0]
         };
         
-        const crossAnchor = (interrelation === 'cross' && actualAnchorsCount > 1)
+        const isCross = interrelation === 'cross' || (interrelation === 'mixed' && Math.random() < 0.5);
+        const crossAnchor = (isCross && actualAnchorsCount > 1)
           ? levels[0][(parent.axisIndex + 1) % actualAnchorsCount]
           : undefined;
 
@@ -1051,7 +1052,7 @@ export function generateAnalogyPuzzle(
     anchorCount: number;
     anchorDefinitionsCount?: number;
     shiftsPerAnchor: number;
-    interrelation: 'chain' | 'cross';
+    interrelation: 'chain' | 'cross' | 'mixed';
     scaleType: 'integer' | 'mixed';
     activeContextsCount?: string | number;
     scrambleSetting?: 'none' | 'partial' | 'full';
@@ -1692,7 +1693,7 @@ export default function TrainingWorkspace({
   const [customAnchorDefinitions, setCustomAnchorDefinitions] = useState<number>(4);
   const [customAnchors, setCustomAnchors] = useState<number>(2);
   const [customShiftsCount, setCustomShiftsCount] = useState<number>(2);
-  const [customInterrelation, setCustomInterrelation] = useState<'chain' | 'cross'>('chain');
+  const [customInterrelation, setCustomInterrelation] = useState<'chain' | 'cross' | 'mixed'>('chain');
   const [customActiveCount, setCustomActiveCount] = useState<string | number>('random');
   const [scrambleSetting, setScrambleSetting] = useState<'none' | 'partial' | 'full'>('full');
   const [contextType, setContextType] = useState<'premises' | 'inferences' | 'both'>('both');
@@ -2417,7 +2418,7 @@ export default function TrainingWorkspace({
                    {/* Cross-channel references option */}
                   <div className="flex flex-col gap-1.5" id="context-interrelation-control">
                     <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase">Register Interrelation</span>
-                    <div className="grid grid-cols-2 gap-0.5 bg-theme-card p-0.5 border border-theme-comp/40 h-[34px]">
+                    <div className="grid grid-cols-3 gap-0.5 bg-theme-card p-0.5 border border-theme-comp/40 h-[34px]">
                       <button
                         id="btn-interrelation-chain"
                         onClick={() => setCustomInterrelation('chain')}
@@ -2442,6 +2443,20 @@ export default function TrainingWorkspace({
                         }`}
                       >
                         Cross Registers
+                      </button>
+                      <button
+                        id="btn-interrelation-mixed"
+                        disabled={customAnchors < 2 || customShiftsCount < 1}
+                        onClick={() => setCustomInterrelation('mixed')}
+                        className={`py-1 text-[9px] font-mono font-bold uppercase transition-all duration-150 cursor-pointer ${
+                          (customAnchors < 2 || customShiftsCount < 1)
+                            ? 'opacity-25 cursor-not-allowed bg-theme-bg/50 text-neutral-400'
+                            : customInterrelation === 'mixed'
+                              ? 'bg-theme-comp text-theme-bg'
+                              : 'text-theme-text hover:bg-theme-comp/10'
+                        }`}
+                      >
+                        Mixed
                       </button>
                     </div>
                   </div>
