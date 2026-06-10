@@ -1,1 +1,1 @@
-https://meta-rtt-production.up.railway.app/
+https://meta-rrt-production.up.railway.app/
