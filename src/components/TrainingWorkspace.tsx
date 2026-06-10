@@ -3,7 +3,7 @@ import { DimensionCount, Puzzle, PuzzleDifficulty, TrainingStats } from '../type
 import { generateTrainerPuzzle, getBasisRelations, generateUniqueCVCNames } from '../utils/engine';
 import { 
   Brain, Trophy, Clock, ShieldCheck, HelpCircle, 
-  ArrowRight, RotateCw, Activity, Compass, Sliders 
+  ArrowRight, RotateCw, Activity, Compass, Sliders, Zap 
 } from 'lucide-react';
 
 interface ContextOption {
@@ -30,6 +30,7 @@ interface ContextPuzzle {
     shiftLabel: string; 
     axisIndex?: number;
     effectiveMultiplier?: number;
+    axisMultipliers?: number[];
   }[];
   activeContextGroup: string[]; 
   queryNode: string; 
@@ -41,6 +42,65 @@ interface ContextPuzzle {
   options: ContextOption[];
 }
 
+interface AnalogyPuzzle {
+  dimension: DimensionCount;
+  difficulty: PuzzleDifficulty;
+  nodeDefinitions: {
+    node: string;
+    relation: string;
+    targetNode: string;
+    baseOffset: number[];
+  }[];
+  contextVehicles: {
+    id: string; 
+    boundRelation: string; 
+    boundNode: string; 
+    boundVector: number[];
+    shiftMultiplier: number; 
+    shiftLabel: string; 
+    axisIndex?: number;
+    effectiveMultiplier?: number;
+    axisMultipliers?: number[];
+  }[];
+  context1: string;
+  nodeA: string;
+  nodeB: string;
+  context2: string;
+  nodeC: string;
+  nodeD: string;
+  isTrueAnalogy: boolean;
+  correctAnswerNode: string;
+  options: {
+    text: string;
+    isCorrect: boolean;
+  }[];
+  explanation: string;
+  baseVector: number[];
+  projectedVector: number[];
+  baseRelationName: string;
+  projectedRelationName: string;
+  context1Modifiers: number[];
+  context2Modifiers: number[];
+  context2BaseVector: number[];
+
+  // Optional fields for extended chain / composition / nesting support
+  context3?: string;
+  nodeE?: string;
+  nodeF?: string;
+  context3Modifiers?: number[];
+  context3BaseVector?: number[];
+
+  context4?: string;
+  nodeG?: string;
+  nodeH?: string;
+  context4Modifiers?: number[];
+  context4BaseVector?: number[];
+
+  analogyChainLength?: number;
+  analogyStructureType?: 'standard' | 'nested';
+  analogyContextDepth?: number;
+}
+
 interface TrainingWorkspaceProps {
   stats: TrainingStats;
   onUpdateStats: (newStats: TrainingStats) => void;
@@ -50,8 +110,8 @@ interface TrainingWorkspaceProps {
   setDimension: (dim: DimensionCount) => void;
   setSelectedPremises: (premises: any[]) => void;
   setHighlightedPremiseId: (id: string | null) => void;
-  workoutMode: 'classic' | 'context';
-  setWorkoutMode: (mode: 'classic' | 'context') => void;
+  workoutMode: 'classic' | 'context' | 'analogy';
+  setWorkoutMode: (mode: 'classic' | 'context' | 'analogy') => void;
   onUpdateContextDetails: (details: {
     dimension: DimensionCount;
     baseVector: number[];
@@ -188,17 +248,68 @@ export function generateContextPuzzle(
       parentIndex = Math.floor(Math.random() * connectedNodes.length);
     }
 
-    const parent = connectedNodes[parentIndex];
     const child = remainingNodes.shift()!;
-    const offset = getRandomOffset(dim);
-    const parentCoords = nodesCoords[parent];
+    let foundUnique = false;
+    let offset = [0, 0, 0, 0];
+    let parent = connectedNodes[parentIndex];
+    let parentCoords = nodesCoords[parent];
 
-    nodesCoords[child] = [
-      parentCoords[0] + offset[0],
-      parentCoords[1] + offset[1],
-      parentCoords[2] + offset[2],
-      parentCoords[3] + offset[3]
-    ];
+    for (let attempts = 0; attempts < 150; attempts++) {
+      if (attempts > 10) {
+        parentIndex = Math.floor(Math.random() * connectedNodes.length);
+        parent = connectedNodes[parentIndex];
+        parentCoords = nodesCoords[parent];
+      }
+
+      const candidateOffset = getRandomOffset(dim);
+      const candidateCoords = [
+        parentCoords[0] + candidateOffset[0],
+        parentCoords[1] + candidateOffset[1],
+        parentCoords[2] + candidateOffset[2],
+        parentCoords[3] + candidateOffset[3]
+      ];
+
+      const occupied = Object.values(nodesCoords).some(coords => 
+        coords[0] === candidateCoords[0] &&
+        coords[1] === candidateCoords[1] &&
+        coords[2] === candidateCoords[2] &&
+        coords[3] === candidateCoords[3]
+      );
+
+      if (!occupied) {
+        offset = candidateOffset;
+        nodesCoords[child] = candidateCoords;
+        foundUnique = true;
+        break;
+      }
+    }
+
+    if (!foundUnique) {
+      let fallbackOffset = [0, 0, 0, 0];
+      let iteration = 1;
+      while (!foundUnique) {
+        fallbackOffset = [iteration * 3, 0, 0, 0];
+        const candidateCoords = [
+          parentCoords[0] + fallbackOffset[0],
+          parentCoords[1] + fallbackOffset[1],
+          parentCoords[2] + fallbackOffset[2],
+          parentCoords[3] + fallbackOffset[3]
+        ];
+        const occupied = Object.values(nodesCoords).some(coords => 
+          coords[0] === candidateCoords[0] &&
+          coords[1] === candidateCoords[1] &&
+          coords[2] === candidateCoords[2] &&
+          coords[3] === candidateCoords[3]
+        );
+        if (!occupied) {
+          offset = fallbackOffset;
+          nodesCoords[child] = candidateCoords;
+          foundUnique = true;
+        }
+        iteration++;
+      }
+    }
+
     connectedNodes.push(child);
 
     rawGeneratedAxes.push({
@@ -869,6 +980,698 @@ export function generateContextPuzzle(
   };
 }
 
+function findPathInTree(
+  nodeDefs: { node: string; targetNode: string }[],
+  start: string,
+  end: string
+): number[] {
+  const adj: Record<string, { to: string; edgeIdx: number }[]> = {};
+  for (let i = 0; i < nodeDefs.length; i++) {
+    const { node, targetNode } = nodeDefs[i];
+    if (!adj[node]) adj[node] = [];
+    if (!adj[targetNode]) adj[targetNode] = [];
+    adj[node].push({ to: targetNode, edgeIdx: i });
+    adj[targetNode].push({ to: node, edgeIdx: i });
+  }
+
+  const queue: { current: string; pathEdges: number[] }[] = [{ current: start, pathEdges: [] }];
+  const visited = new Set<string>([start]);
+
+  while (queue.length > 0) {
+    const { current, pathEdges } = queue.shift()!;
+    if (current === end) {
+      return pathEdges;
+    }
+    const neighbors = adj[current] || [];
+    for (const edge of neighbors) {
+      if (!visited.has(edge.to)) {
+        visited.add(edge.to);
+        queue.push({
+          current: edge.to,
+          pathEdges: [...pathEdges, edge.edgeIdx]
+        });
+      }
+    }
+  }
+  return [];
+}
+
+function getContextDependencies(cv: any): string[] {
+  const deps = new Set<string>();
+  const sources = [cv.shiftLabel || '', cv.text || ''];
+  for (const src of sources) {
+    // 1. Matches Parent: e.g. Scale(A), Invert(B)
+    const parenMatches = src.match(/\(([A-Z])\)/g);
+    if (parenMatches) {
+      for (const m of parenMatches) {
+        const char = m.slice(1, -1);
+        deps.add(char);
+      }
+    }
+    // 2. Matches Context X: e.g. Context A, Context B
+    const contextMatches = src.match(/Context\s+([A-Z])\b/gi);
+    if (contextMatches) {
+      for (const m of contextMatches) {
+        // Extract the last character (the ID)
+        const char = m.trim().slice(-1).toUpperCase();
+        deps.add(char);
+      }
+    }
+  }
+  // Exclude self id
+  deps.delete(cv.id);
+  return Array.from(deps);
+}
+
+export function generateAnalogyPuzzle(
+  dim: DimensionCount,
+  difficulty: PuzzleDifficulty,
+  customSettings?: {
+    useCustom: boolean;
+    anchorCount: number;
+    anchorDefinitionsCount?: number;
+    shiftsPerAnchor: number;
+    interrelation: 'chain' | 'cross';
+    scaleType: 'integer' | 'mixed';
+    activeContextsCount?: string | number;
+    scrambleSetting?: 'none' | 'partial' | 'full';
+    contextType?: 'premises' | 'inferences' | 'both';
+    analogyContextDepth?: number;
+    analogyChainLength?: number;
+    analogyStructureType?: 'standard' | 'nested';
+  }
+): AnalogyPuzzle {
+  const useCustom = !!customSettings?.useCustom;
+  const configDepth = useCustom ? (customSettings.analogyContextDepth ?? 1) : 1;
+  const configLength = useCustom ? (customSettings.analogyChainLength ?? 2) : 2;
+  const configStructure = useCustom ? (customSettings.analogyStructureType ?? 'standard') : 'standard';
+
+  let attempts = 0;
+  while (attempts < 300) {
+    attempts++;
+    // Force enough nodes to generate completely disjoint pairs like A:B :: C:D
+    const forcedSettings = {
+      useCustom: true,
+      anchorCount: Math.max(customSettings?.anchorCount || (dim >= 4 ? 6 : 5), 5),
+      anchorDefinitionsCount: Math.max(customSettings?.anchorDefinitionsCount || (dim >= 4 ? 6 : 5), 5),
+      shiftsPerAnchor: customSettings?.shiftsPerAnchor ?? 2,
+      interrelation: customSettings?.interrelation ?? 'cross',
+      scaleType: customSettings?.scaleType ?? 'integer',
+      activeContextsCount: customSettings?.activeContextsCount ?? 3,
+      scrambleSetting: customSettings?.scrambleSetting ?? 'full',
+      contextType: customSettings?.contextType ?? 'both'
+    };
+
+    const basePuzzle = generateContextPuzzle(dim, difficulty, forcedSettings);
+    
+    // Resolve coordinates for all nodes to find spatial offsets
+    const nodeCoords: Record<string, number[]> = {};
+    const nodeNames = Array.from(new Set([
+      ...basePuzzle.nodeDefinitions.map(d => d.node),
+      ...basePuzzle.nodeDefinitions.map(d => d.targetNode)
+    ]));
+    
+    const firstDef = basePuzzle.nodeDefinitions[0];
+    if (!firstDef) continue;
+    
+    const root = firstDef.targetNode;
+    nodeCoords[root] = [0, 0, 0, 0];
+    
+    let changed = true;
+    let limit = 0;
+    while (changed && limit < 100) {
+      changed = false;
+      limit++;
+      for (const def of basePuzzle.nodeDefinitions) {
+        const u = def.node;
+        const v = def.targetNode;
+        const offset = def.baseOffset;
+        if (nodeCoords[v] !== undefined && nodeCoords[u] === undefined) {
+          nodeCoords[u] = [
+            nodeCoords[v][0] + offset[0],
+            nodeCoords[v][1] + offset[1],
+            nodeCoords[v][2] + (offset[2] ?? 0),
+            nodeCoords[v][3] + (offset[3] ?? 0)
+          ];
+          changed = true;
+        } else if (nodeCoords[u] !== undefined && nodeCoords[v] === undefined) {
+          nodeCoords[v] = [
+            nodeCoords[u][0] - offset[0],
+            nodeCoords[u][1] - offset[1],
+            nodeCoords[u][2] - (offset[2] ?? 0),
+            nodeCoords[u][3] - (offset[3] ?? 0)
+          ];
+          changed = true;
+        }
+      }
+    }
+    
+    if (Object.keys(nodeCoords).length < nodeNames.length) continue;
+    
+    const vehicles = basePuzzle.contextVehicles;
+    if (vehicles.length < 4) continue;
+    
+    // Gather all pairwise vector combinations
+    const pairs: { u: string; v: string; baseVec: number[] }[] = [];
+    for (const u of nodeNames) {
+      for (const v of nodeNames) {
+        if (u === v) continue;
+        const baseVec = [
+          nodeCoords[u][0] - nodeCoords[v][0],
+          nodeCoords[u][1] - nodeCoords[v][1],
+          (nodeCoords[u][2] ?? 0) - (nodeCoords[v][2] ?? 0),
+          (nodeCoords[u][3] ?? 0) - (nodeCoords[v][3] ?? 0),
+        ];
+        pairs.push({ u, v, baseVec });
+      }
+    }
+
+    // Compose custom groups of vehicles for each category
+    const K = configDepth;
+    const groupsNeeded = configStructure === 'nested' ? 4 : configLength;
+    
+    const sampledGroups: typeof vehicles[] = [];
+    for (let g = 0; g < groupsNeeded; g++) {
+      const shuf = [...vehicles].sort(() => Math.random() - 0.5);
+      sampledGroups.push(shuf.slice(0, K));
+    }
+
+    const getCompositeModifiers = (grp: typeof vehicles) => {
+      const mults = [1, 1, 1, 1];
+      for (const v of grp) {
+        const m = v.axisMultipliers || [1, 1, 1, 1];
+        for (let d = 0; d < 4; d++) {
+          mults[d] *= (m[d] ?? 1);
+        }
+      }
+      return mults;
+    };
+    
+    const getCompositeName = (grp: typeof vehicles) => {
+      return grp.map(v => v.id).join(' ∘ ');
+    };
+
+    const m1 = getCompositeModifiers(sampledGroups[0]);
+    const m2 = getCompositeModifiers(sampledGroups[1]);
+    const name1 = getCompositeName(sampledGroups[0]);
+    const name2 = getCompositeName(sampledGroups[1]);
+
+    const gpProj = (p: typeof pairs[0], mults: number[]) => {
+      return [
+        p.baseVec[0] * mults[0],
+        p.baseVec[1] * mults[1],
+        p.baseVec[2] * mults[2],
+        p.baseVec[3] * mults[3],
+      ];
+    };
+
+    if (configStructure === 'nested') {
+      const m3 = getCompositeModifiers(sampledGroups[2]);
+      const m4 = getCompositeModifiers(sampledGroups[3]);
+      const name3 = getCompositeName(sampledGroups[2]);
+      const name4 = getCompositeName(sampledGroups[3]);
+
+      // Nested structure: (m1(p1) :: m2(p2)) :: (m3(p3) :: m4(p4))
+      const matches: { u1: string; v1: string; u2: string; v2: string; u3: string; v3: string; u4: string; v4: string; diff: number[] }[] = [];
+
+      for (const p1 of pairs) {
+        const proj1 = gpProj(p1, m1);
+        if (proj1.slice(0, dim).every(val => val === 0)) continue;
+
+        for (const p2 of pairs) {
+          if (p1.u === p2.u && p1.v === p2.v) continue;
+          const proj2 = gpProj(p2, m2);
+          const diff12 = [proj1[0] - proj2[0], proj1[1] - proj2[1], proj1[2] - proj2[2], proj1[3] - proj2[3]];
+
+          for (const p3 of pairs) {
+            if (p3.u === p1.u || p3.u === p2.u) continue;
+            const proj3 = gpProj(p3, m3);
+
+            for (const p4 of pairs) {
+              if (p4.u === p3.u || p4.u === p1.u || p4.u === p2.u) continue;
+              const proj4 = gpProj(p4, m4);
+              const diff34 = [proj3[0] - proj4[0], proj3[1] - proj4[1], proj3[2] - proj4[2], proj3[3] - proj4[3]];
+
+              let equal = true;
+              for (let d = 0; d < dim; d++) {
+                if (Math.abs(diff12[d] - diff34[d]) > 1e-5) {
+                  equal = false;
+                  break;
+                }
+              }
+
+              if (equal) {
+                matches.push({ u1: p1.u, v1: p1.v, u2: p2.u, v2: p2.v, u3: p3.u, v3: p3.v, u4: p4.u, v4: p4.v, diff: diff12 });
+              }
+            }
+          }
+        }
+      }
+
+      if (matches.length > 0) {
+        const chosen = matches[Math.floor(Math.random() * matches.length)];
+        const isTrueAnalogy = Math.random() < 0.5;
+        const correctNode = chosen.v4;
+        let presentedNodeH = '';
+
+        if (isTrueAnalogy) {
+          presentedNodeH = correctNode;
+        } else {
+          // Choose someone else that breaks it
+          const wrongCandidates = nodeNames.filter(n => n !== chosen.u4 && n !== correctNode && n !== chosen.u1 && n !== chosen.v1);
+          presentedNodeH = wrongCandidates.length > 0 ? wrongCandidates[Math.floor(Math.random() * wrongCandidates.length)] : 'Delta';
+        }
+
+        const u1_coords = nodeCoords[chosen.u1];
+        const v1_coords = nodeCoords[chosen.v1];
+        const u2_coords = nodeCoords[chosen.u2];
+        const v2_coords = nodeCoords[chosen.v2];
+        const u3_coords = nodeCoords[chosen.u3];
+        const v3_coords = nodeCoords[chosen.v3];
+        const u4_coords = nodeCoords[chosen.u4];
+        const v4_coords = nodeCoords[presentedNodeH] || [0, 0, 0, 0];
+
+        const p1_base = [u1_coords[0] - v1_coords[0], u1_coords[1] - v1_coords[1], u1_coords[2] - v1_coords[2], u1_coords[3] - v1_coords[3]];
+        const p2_base = [u2_coords[0] - v2_coords[0], u2_coords[1] - v2_coords[1], u2_coords[2] - v2_coords[2], u2_coords[3] - v2_coords[3]];
+        const p3_base = [u3_coords[0] - v3_coords[0], u3_coords[1] - v3_coords[1], u3_coords[2] - v3_coords[2], u3_coords[3] - v3_coords[3]];
+        const p4_base = [u4_coords[0] - v4_coords[0], u4_coords[1] - v4_coords[1], u4_coords[2] - v4_coords[2], u4_coords[3] - v4_coords[3]];
+
+        const proj1 = gpProj({ u: chosen.u1, v: chosen.v1, baseVec: p1_base }, m1);
+        const proj2 = gpProj({ u: chosen.u2, v: chosen.v2, baseVec: p2_base }, m2);
+        const proj3 = gpProj({ u: chosen.u3, v: chosen.v3, baseVec: p3_base }, m3);
+        const proj4 = gpProj({ u: chosen.u4, v: presentedNodeH, baseVec: p4_base }, m4);
+
+        const diffLeft = [proj1[0] - proj2[0], proj1[1] - proj2[1], proj1[2] - proj2[2], proj1[3] - proj2[3]];
+        const diffRight = [proj3[0] - proj4[0], proj3[1] - proj4[1], proj3[2] - proj4[2], proj3[3] - proj4[3]];
+
+        const options = [
+          { text: 'True', isCorrect: isTrueAnalogy },
+          { text: 'False', isCorrect: !isTrueAnalogy }
+        ];
+
+        const explainedSteps = [
+          `### Step 1: Left Meta Relation (Context ${name1}(${chosen.u1}:${chosen.v1}) :: Context ${name2}(${chosen.u2}:${chosen.v2}))`,
+          `• **Term 1 (${chosen.u1}:${chosen.v1})** baseline vector $[${p1_base.slice(0,dim).join(',')}]$, projected multiplier $[${m1.slice(0,dim).join(',')}]$, vector: $[${proj1.slice(0,dim).join(',')}]$\n` +
+          `• **Term 2 (${chosen.u2}:${chosen.v2})** baseline vector $[${p2_base.slice(0,dim).join(',')}]$, projected multiplier $[${m2.slice(0,dim).join(',')}]$, vector: $[${proj2.slice(0,dim).join(',')}]$\n` +
+          `• **Left Congruence Offset**: $[${diffLeft.slice(0,dim).join(',')}]$`,
+          `### Step 2: Right Meta Relation (Context ${name3}(${chosen.u3}:${chosen.v3}) :: Context ${name4}(${chosen.u4}:${presentedNodeH}))`,
+          `• **Term 3 (${chosen.u3}:${chosen.v3})** baseline vector $[${p3_base.slice(0,dim).join(',')}]$, projected multiplier $[${m3.slice(0,dim).join(',')}]$, vector: $[${proj3.slice(0,dim).join(',')}]$\n` +
+          `• **Term 4 (${chosen.u4}:${presentedNodeH})** baseline vector $[${p4_base.slice(0,dim).join(',')}]$, projected multiplier $[${m4.slice(0,dim).join(',')}]$, vector: $[${proj4.slice(0,dim).join(',')}]$\n` +
+          `• **Right Congruence Offset**: $[${diffRight.slice(0,dim).join(',')}]$`,
+          `### Step 3: Meta Alignment Evaluation`,
+          isTrueAnalogy
+            ? `• Since Left Offset ($[${diffLeft.slice(0,dim).join(',')}]$) **is perfectly consistent** with Right Offset ($[${diffRight.slice(0,dim).join(',')}]$), the meta-analogy chain statement is **TRUE**.`
+            : `• Since Left Offset ($[${diffLeft.slice(0,dim).join(',')}]$) **is not consistent** with Right Offset ($[${diffRight.slice(0,dim).join(',')}]$), the meta-analogy chain statement is **FALSE**.`
+        ];
+
+        const requiredContextIds = new Set<string>();
+        for (const grp of sampledGroups) {
+          for (const v of grp) {
+            requiredContextIds.add(v.id);
+          }
+        }
+
+        return {
+          dimension: dim,
+          difficulty,
+          nodeDefinitions: basePuzzle.nodeDefinitions,
+          contextVehicles: basePuzzle.contextVehicles.filter(ctx => requiredContextIds.has(ctx.id)),
+          context1: name1,
+          nodeA: chosen.u1,
+          nodeB: chosen.v1,
+          context2: name2,
+          nodeC: chosen.u2,
+          nodeD: chosen.v2,
+          context3: name3,
+          nodeE: chosen.u3,
+          nodeF: chosen.v3,
+          context4: name4,
+          nodeG: chosen.u4,
+          nodeH: presentedNodeH,
+          isTrueAnalogy,
+          correctAnswerNode: correctNode,
+          options,
+          explanation: explainedSteps.join('\n\n'),
+          baseVector: p1_base,
+          projectedVector: proj1,
+          baseRelationName: describeContextVector(p1_base, dim),
+          projectedRelationName: describeContextVector(proj1, dim),
+          context1Modifiers: m1,
+          context2Modifiers: m2,
+          context2BaseVector: p2_base,
+          context3Modifiers: m3,
+          context3BaseVector: p3_base,
+          context4Modifiers: m4,
+          context4BaseVector: p4_base,
+          analogyChainLength: configLength,
+          analogyStructureType: configStructure,
+          analogyContextDepth: configDepth
+        };
+      }
+    } else {
+      // Standard structure with chain length configLength (e.g., 2 or 3)
+      if (configLength === 3) {
+        const m3 = getCompositeModifiers(sampledGroups[2]);
+        const name3 = getCompositeName(sampledGroups[2]);
+
+        const matches: {
+          u1: string; v1: string; proj1: number[];
+          u2: string; v2: string; proj2: number[];
+          u3: string; v3: string; proj3: number[];
+        }[] = [];
+
+        for (const p1 of pairs) {
+          const proj1 = gpProj(p1, m1);
+          if (proj1.slice(0, dim).every(val => val === 0)) continue;
+
+          for (const p2 of pairs) {
+            if (p1.u === p2.u && p1.v === p2.v) continue;
+            const proj2 = gpProj(p2, m2);
+
+            let equal12 = true;
+            for (let d = 0; d < dim; d++) {
+              if (Math.abs(proj1[d] - proj2[d]) > 1e-5) {
+                equal12 = false;
+                break;
+              }
+            }
+            if (!equal12) continue;
+
+            for (const p3 of pairs) {
+              if (p3.u === p1.u || p3.u === p2.u) continue;
+              const proj3 = gpProj(p3, m3);
+
+              let equal23 = true;
+              for (let d = 0; d < dim; d++) {
+                if (Math.abs(proj2[d] - proj3[d]) > 1e-5) {
+                  equal23 = false;
+                  break;
+                }
+              }
+
+              if (equal23) {
+                matches.push({ u1: p1.u, v1: p1.v, proj1, u2: p2.u, v2: p2.v, proj2, u3: p3.u, v3: p3.v, proj3 });
+              }
+            }
+          }
+        }
+
+        if (matches.length > 0) {
+          const chosen = matches[Math.floor(Math.random() * matches.length)];
+          const correctNode = chosen.v3;
+          const isTrueAnalogy = Math.random() < 0.5;
+          let presentedNodeF = '';
+
+          if (isTrueAnalogy) {
+            presentedNodeF = correctNode;
+          } else {
+            const wrongCandidates = nodeNames.filter(n => n !== chosen.u3 && n !== correctNode && n !== chosen.u1 && n !== chosen.v1);
+            presentedNodeF = wrongCandidates.length > 0 ? wrongCandidates[Math.floor(Math.random() * wrongCandidates.length)] : 'Delta';
+          }
+
+          const u1_coords = nodeCoords[chosen.u1];
+          const v1_coords = nodeCoords[chosen.v1];
+          const u2_coords = nodeCoords[chosen.u2];
+          const v2_coords = nodeCoords[chosen.v2];
+          const u3_coords = nodeCoords[chosen.u3];
+          const v3_coords = nodeCoords[presentedNodeF] || [0, 0, 0, 0];
+
+          const p1_base = [u1_coords[0] - v1_coords[0], u1_coords[1] - v1_coords[1], u1_coords[2] - v1_coords[2], u1_coords[3] - v1_coords[3]];
+          const p2_base = [u2_coords[0] - v2_coords[0], u2_coords[1] - v2_coords[1], u2_coords[2] - v2_coords[2], u2_coords[3] - v2_coords[3]];
+          const p3_base = [u3_coords[0] - v3_coords[0], u3_coords[1] - v3_coords[1], u3_coords[2] - v3_coords[2], u3_coords[3] - v3_coords[3]];
+
+          const proj3 = gpProj({ u: chosen.u3, v: presentedNodeF, baseVec: p3_base }, m3);
+
+          const c1_relation = describeContextVector(chosen.proj1, dim);
+          const c2_relation = describeContextVector(chosen.proj2, dim);
+          const c3_relation = describeContextVector(proj3, dim);
+
+          const options = [
+            { text: 'True', isCorrect: isTrueAnalogy },
+            { text: 'False', isCorrect: !isTrueAnalogy }
+          ];
+
+          const explainedSteps = [
+            `### Step 1: Analyze Term 1 (${chosen.u1} : ${chosen.v1} under Context ${name1})`,
+            `• Baseline vector $[${p1_base.slice(0,dim).join(',')}]$, projected multiplier $[${m1.slice(0,dim).join(',')}]$, vector: $[${chosen.proj1.slice(0,dim).join(',')}]$ (**${c1_relation}**)\n`,
+            `### Step 2: Analyze Term 2 (${chosen.u2} : ${chosen.v2} under Context ${name2})`,
+            `• Baseline vector $[${p2_base.slice(0,dim).join(',')}]$, projected multiplier $[${m2.slice(0,dim).join(',')}]$, vector: $[${chosen.proj2.slice(0,dim).join(',')}]$ (**${c2_relation}**)\n`,
+            `### Step 3: Analyze Term 3 (${chosen.u3} : ${presentedNodeF} under Context ${name3})`,
+            `• Baseline vector $[${p3_base.slice(0,dim).join(',')}]$, projected multiplier $[${m3.slice(0,dim).join(',')}]$, vector: $[${proj3.slice(0,dim).join(',')}]$ (**${c3_relation}**)\n`,
+            `### Step 4: Triple Chain Alignment`,
+            isTrueAnalogy
+              ? `• Since both transitions match each other perfectly ($[${chosen.proj1.slice(0,dim).join(',')}]$ ≈ $[${chosen.proj2.slice(0,dim).join(',')}]$ ≈ $[${proj3.slice(0,dim).join(',')}]$), the 3-chain analogy holds **TRUE**.`
+              : `• Since Term 3's projected relation ($[${proj3.slice(0,dim).join(',')}]$: **${c3_relation}**) does not match the standard ($[${chosen.proj1.slice(0,dim).join(',')}]$), the analogy holds **FALSE**.`
+          ];
+
+          const requiredContextIds = new Set<string>();
+          for (const grp of [sampledGroups[0], sampledGroups[1], sampledGroups[2]]) {
+            for (const v of grp) {
+              requiredContextIds.add(v.id);
+            }
+          }
+
+          return {
+            dimension: dim,
+            difficulty,
+            nodeDefinitions: basePuzzle.nodeDefinitions,
+            contextVehicles: basePuzzle.contextVehicles.filter(ctx => requiredContextIds.has(ctx.id)),
+            context1: name1,
+            nodeA: chosen.u1,
+            nodeB: chosen.v1,
+            context2: name2,
+            nodeC: chosen.u2,
+            nodeD: chosen.v2,
+            context3: name3,
+            nodeE: chosen.u3,
+            nodeF: presentedNodeF,
+            isTrueAnalogy,
+            correctAnswerNode: correctNode,
+            options,
+            explanation: explainedSteps.join('\n\n'),
+            baseVector: p1_base,
+            projectedVector: chosen.proj1,
+            baseRelationName: describeContextVector(p1_base, dim),
+            projectedRelationName: c1_relation,
+            context1Modifiers: m1,
+            context2Modifiers: m2,
+            context2BaseVector: p2_base,
+            context3Modifiers: m3,
+            context3BaseVector: p3_base,
+            analogyChainLength: configLength,
+            analogyStructureType: configStructure,
+            analogyContextDepth: configDepth
+          };
+        }
+      } else {
+        // Standard length 2
+        const matches: {
+          ctx1: string; m1: number[]; u1: string; v1: string; proj1: number[];
+          ctx2: string; m2: number[]; u2: string; v2: string; proj2: number[];
+        }[] = [];
+
+        for (const p1 of pairs) {
+          const proj1 = gpProj(p1, m1);
+          if (proj1.slice(0, dim).every(val => val === 0)) continue;
+
+          for (const p2 of pairs) {
+            if (p1.u === p2.u && p1.v === p2.v) continue;
+            const proj2 = gpProj(p2, m2);
+
+            let equal = true;
+            for (let d = 0; d < dim; d++) {
+              if (Math.abs(proj1[d] - proj2[d]) > 1e-5) {
+                equal = false;
+                break;
+              }
+            }
+
+            if (equal) {
+              matches.push({
+                ctx1: name1, m1, u1: p1.u, v1: p1.v, proj1,
+                ctx2: name2, m2, u2: p2.u, v2: p2.v, proj2
+              });
+            }
+          }
+        }
+
+        if (matches.length > 0) {
+          let uniqueNodeMatches = matches.filter(m => 
+            m.u1 !== m.u2 && m.u1 !== m.v2 && 
+            m.v1 !== m.u2 && m.v1 !== m.v2
+          );
+          if (uniqueNodeMatches.length === 0) {
+            uniqueNodeMatches = matches.filter(m => 
+              !(m.u1 === m.u2 && m.v1 === m.v2) && 
+              !(m.u1 === m.v2 && m.v1 === m.u2)
+            );
+          }
+
+          const chosen = uniqueNodeMatches.length > 0
+            ? uniqueNodeMatches[Math.floor(Math.random() * uniqueNodeMatches.length)]
+            : matches[Math.floor(Math.random() * matches.length)];
+
+          const correctNode = chosen.v2;
+          const isTrueAnalogy = Math.random() < 0.5;
+          let presentedNodeD = '';
+
+          if (isTrueAnalogy) {
+            presentedNodeD = correctNode;
+          } else {
+            const incorrectCandidates = nodeNames.filter(n => {
+              if (n === chosen.u2 || n === correctNode) return false;
+              const baseVec = [
+                nodeCoords[chosen.u2][0] - nodeCoords[n][0],
+                nodeCoords[chosen.u2][1] - nodeCoords[n][1],
+                (nodeCoords[chosen.u2][2] ?? 0) - (nodeCoords[n][2] ?? 0),
+                (nodeCoords[chosen.u2][3] ?? 0) - (nodeCoords[n][3] ?? 0),
+              ];
+              const projC2Temp = gpProj({ u: chosen.u2, v: n, baseVec }, m2);
+              let match = true;
+              for (let d = 0; d < dim; d++) {
+                if (Math.abs(chosen.proj1[d] - projC2Temp[d]) > 1e-5) {
+                  match = false;
+                  break;
+                }
+              }
+              return !match;
+            });
+
+            const preferredIncorrect = incorrectCandidates.filter(n => n !== chosen.u1 && n !== chosen.v1);
+            if (preferredIncorrect.length > 0) {
+              presentedNodeD = preferredIncorrect[Math.floor(Math.random() * preferredIncorrect.length)];
+            } else if (incorrectCandidates.length > 0) {
+              presentedNodeD = incorrectCandidates[Math.floor(Math.random() * incorrectCandidates.length)];
+            } else {
+              const fallbackCandidates = nodeNames.filter(n => n !== correctNode && n !== chosen.u2);
+              presentedNodeD = fallbackCandidates.length > 0
+                ? fallbackCandidates[Math.floor(Math.random() * fallbackCandidates.length)]
+                : 'Delta';
+            }
+          }
+
+          const u1_coords = nodeCoords[chosen.u1];
+          const v1_coords = nodeCoords[chosen.v1];
+          const u2_coords = nodeCoords[chosen.u2];
+          const v2_coords = nodeCoords[presentedNodeD] || [0, 0, 0, 0];
+
+          const baseVecC1 = [u1_coords[0] - v1_coords[0], u1_coords[1] - v1_coords[1], u1_coords[2] - v1_coords[2], u1_coords[3] - v1_coords[3]];
+          const baseVecC2 = [u2_coords[0] - v2_coords[0], u2_coords[1] - v2_coords[1], u2_coords[2] - v2_coords[2], u2_coords[3] - v2_coords[3]];
+
+          const projC2 = gpProj({ u: chosen.u2, v: presentedNodeD, baseVec: baseVecC2 }, m2);
+
+          const c1_relation = describeContextVector(chosen.proj1, dim);
+          const c2_relation = describeContextVector(projC2, dim);
+
+          const options = [
+            { text: 'True', isCorrect: isTrueAnalogy },
+            { text: 'False', isCorrect: !isTrueAnalogy }
+          ];
+
+          const explainedSteps = [
+            `### Step 1: Analyze Term 1 (${chosen.u1} : ${chosen.v1} under Context ${chosen.ctx1})`,
+            `• Baseline vector $[${baseVecC1.slice(0,dim).join(',')}]$, projected multiplier $[${m1.slice(0,dim).join(',')}]$, vector: $[${chosen.proj1.slice(0,dim).join(',')}]$ (**${c1_relation}**)\n`,
+            `### Step 2: Analyze Term 2 (${chosen.u2} : ${presentedNodeD} under Context ${chosen.ctx2})`,
+            `• Baseline vector $[${baseVecC2.slice(0,dim).join(',')}]$, projected multiplier $[${m2.slice(0,dim).join(',')}]$, vector: $[${projC2.slice(0,dim).join(',')}]$ (**${c2_relation}**)\n`,
+            `### Step 3: Proportional Evaluation`,
+            isTrueAnalogy
+              ? `• Since the vector for Term 1 under Context ${chosen.ctx1} matches exactly with Term 2 under Context ${chosen.ctx2}, the analogy holds **TRUE**.`
+              : `• Since the vector for Term 1 under Context ${chosen.ctx1} ($[${chosen.proj1.slice(0,dim).join(',')}]$) does not match Term 2 ($[${projC2.slice(0,dim).join(',')}]$), the analogy holds **FALSE**.`
+          ];
+
+          const requiredContextIds = new Set<string>();
+          for (const grp of [sampledGroups[0], sampledGroups[1]]) {
+            for (const v of grp) {
+              requiredContextIds.add(v.id);
+            }
+          }
+
+          return {
+            dimension: dim,
+            difficulty,
+            nodeDefinitions: basePuzzle.nodeDefinitions,
+            contextVehicles: basePuzzle.contextVehicles.filter(ctx => requiredContextIds.has(ctx.id)),
+            context1: chosen.ctx1,
+            nodeA: chosen.u1,
+            nodeB: chosen.v1,
+            context2: chosen.ctx2,
+            nodeC: chosen.u2,
+            nodeD: presentedNodeD,
+            isTrueAnalogy,
+            correctAnswerNode: correctNode,
+            options,
+            explanation: explainedSteps.join('\n\n'),
+            baseVector: baseVecC1,
+            projectedVector: chosen.proj1,
+            baseRelationName: describeContextVector(baseVecC1, dim),
+            projectedRelationName: c1_relation,
+            context1Modifiers: m1,
+            context2Modifiers: m2,
+            context2BaseVector: baseVecC2,
+            analogyChainLength: configLength,
+            analogyStructureType: configStructure,
+            analogyContextDepth: configDepth
+          };
+        }
+      }
+    }
+  }
+  
+  const basePuzzle = generateContextPuzzle(dim, difficulty, customSettings);
+
+  const fallbackRequiredIds = new Set<string>(['A', 'B']);
+  const fbVisited = new Set<string>();
+  const fbQueue = ['A', 'B'];
+  
+  while (fbQueue.length > 0) {
+    const currentId = fbQueue.shift()!;
+    if (fbVisited.has(currentId)) continue;
+    fbVisited.add(currentId);
+    
+    const cv = basePuzzle.contextVehicles.find(v => v.id === currentId);
+    if (cv) {
+      const deps = getContextDependencies(cv);
+      for (const depId of deps) {
+        fallbackRequiredIds.add(depId);
+        if (!fbVisited.has(depId)) {
+          fbQueue.push(depId);
+        }
+      }
+    }
+  }
+
+  const filteredContextVehicles = basePuzzle.contextVehicles.filter(
+    ctx => fallbackRequiredIds.has(ctx.id)
+  );
+
+  return {
+    dimension: dim,
+    difficulty,
+    nodeDefinitions: basePuzzle.nodeDefinitions,
+    contextVehicles: filteredContextVehicles,
+    context1: 'A',
+    nodeA: 'Alpha',
+    nodeB: 'Beta',
+    context2: 'B',
+    nodeC: 'Gamma',
+    nodeD: 'Delta',
+    isTrueAnalogy: true,
+    correctAnswerNode: 'Delta',
+    options: [
+      { text: 'True', isCorrect: true },
+      { text: 'False', isCorrect: false }
+    ],
+    explanation: "Fallback analogy matches base relations.",
+    baseVector: [1, 0, 0, 0],
+    projectedVector: [1, 0, 0, 0],
+    baseRelationName: 'North',
+    projectedRelationName: 'North',
+    context1Modifiers: [1, 1, 1, 1],
+    context2Modifiers: [1, 1, 1, 1],
+    context2BaseVector: [1, 0, 0, 0]
+  };
+}
+
 export default function TrainingWorkspace({
   stats,
   onUpdateStats,
@@ -894,12 +1697,22 @@ export default function TrainingWorkspace({
   const [scrambleSetting, setScrambleSetting] = useState<'none' | 'partial' | 'full'>('full');
   const [contextType, setContextType] = useState<'premises' | 'inferences' | 'both'>('both');
   
+  // Custom analogy settings
+  const [customAnalogyDepth, setCustomAnalogyDepth] = useState<number>(1);
+  const [customAnalogyLength, setCustomAnalogyLength] = useState<number>(2);
+  const [customAnalogyStructure, setCustomAnalogyStructure] = useState<'standard' | 'nested'>('standard');
+  
   const [currentPuzzle, setCurrentPuzzle] = useState<Puzzle | null>(null);
   const [selectedAnswerIdx, setSelectedAnswerIdx] = useState<number | null>(null);
 
   const [currentCtxPuzzle, setCurrentCtxPuzzle] = useState<ContextPuzzle | null>(null);
   const [selectedCtxAnswerIdx, setSelectedCtxAnswerIdx] = useState<number | null>(null);
   const [showCtxExplanation, setShowCtxExplanation] = useState<boolean>(false);
+
+  const [currentAnalogyPuzzle, setCurrentAnalogyPuzzle] = useState<AnalogyPuzzle | null>(null);
+  const [selectedAnalogyAnswerIdx, setSelectedAnalogyAnswerIdx] = useState<number | null>(null);
+  const [showAnalogyExplanation, setShowAnalogyExplanation] = useState<boolean>(false);
+  const [activeAnalogyTab, setActiveAnalogyTab] = useState<'ctx1' | 'ctx2' | 'ctx3' | 'ctx4'>('ctx1');
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [seconds, setSeconds] = useState<number>(0);
@@ -909,6 +1722,7 @@ export default function TrainingWorkspace({
     setIsPlaying(true);
     setDimension(selectedDim);
     setShowCtxExplanation(false);
+    setShowAnalogyExplanation(false);
 
     if (workoutMode === 'classic') {
       const useCustomParams = generatorMode === 'custom';
@@ -927,7 +1741,7 @@ export default function TrainingWorkspace({
       setSelectedAnswerIdx(null);
       setIsSubmitted(false);
       setSeconds(0);
-    } else {
+    } else if (workoutMode === 'context') {
       const newCtxPuzzle = generateContextPuzzle(selectedDim, difficulty, {
         useCustom: generatorMode === 'custom',
         anchorCount: customAnchors,
@@ -959,8 +1773,132 @@ export default function TrainingWorkspace({
         isSubmitted: false,
         activeModifiers: [1, 1, 1, 1]
       });
+    } else {
+      const newAnalogyPuzzle = generateAnalogyPuzzle(selectedDim, difficulty, {
+        useCustom: generatorMode === 'custom',
+        anchorCount: customAnchors,
+        anchorDefinitionsCount: customAnchorDefinitions,
+        shiftsPerAnchor: customShiftsCount,
+        interrelation: customInterrelation,
+        scaleType: 'integer',
+        activeContextsCount: customActiveCount,
+        scrambleSetting: scrambleSetting,
+        contextType: contextType,
+        analogyContextDepth: customAnalogyDepth,
+        analogyChainLength: customAnalogyLength,
+        analogyStructureType: customAnalogyStructure
+      });
+      setCurrentAnalogyPuzzle(newAnalogyPuzzle);
+      setSelectedAnalogyAnswerIdx(null);
+      setIsSubmitted(false);
+      setSeconds(0);
+      setActiveAnalogyTab('ctx1');
+
+      onUpdateContextDetails({
+        dimension: selectedDim,
+        baseVector: newAnalogyPuzzle.baseVector,
+        projectedVector: newAnalogyPuzzle.projectedVector,
+        baseRelationName: newAnalogyPuzzle.baseRelationName,
+        projectedRelationName: newAnalogyPuzzle.projectedRelationName,
+        nodeDefinitions: newAnalogyPuzzle.nodeDefinitions,
+        contextVehicles: newAnalogyPuzzle.contextVehicles,
+        queryNode: newAnalogyPuzzle.nodeA,
+        queryTarget: newAnalogyPuzzle.nodeB,
+        selectedAnswerText: '',
+        selectedAnswerLetter: '',
+        isSubmitted: false,
+        activeModifiers: newAnalogyPuzzle.context1Modifiers
+      });
     }
   };
+
+  useEffect(() => {
+    if (workoutMode === 'analogy' && currentAnalogyPuzzle) {
+      if (activeAnalogyTab === 'ctx1') {
+        onUpdateContextDetails({
+          dimension: selectedDim,
+          baseVector: currentAnalogyPuzzle.baseVector,
+          projectedVector: currentAnalogyPuzzle.projectedVector,
+          baseRelationName: currentAnalogyPuzzle.baseRelationName,
+          projectedRelationName: currentAnalogyPuzzle.projectedRelationName,
+          nodeDefinitions: currentAnalogyPuzzle.nodeDefinitions,
+          contextVehicles: currentAnalogyPuzzle.contextVehicles,
+          queryNode: currentAnalogyPuzzle.nodeA,
+          queryTarget: currentAnalogyPuzzle.nodeB,
+          selectedAnswerText: '',
+          selectedAnswerLetter: '',
+          isSubmitted: isSubmitted,
+          activeModifiers: currentAnalogyPuzzle.context1Modifiers
+        });
+      } else if (activeAnalogyTab === 'ctx2') {
+        const projVecC2 = [
+          currentAnalogyPuzzle.context2BaseVector[0] * currentAnalogyPuzzle.context2Modifiers[0],
+          currentAnalogyPuzzle.context2BaseVector[1] * currentAnalogyPuzzle.context2Modifiers[1],
+          (currentAnalogyPuzzle.context2BaseVector[2] ?? 0) * (currentAnalogyPuzzle.context2Modifiers[2] ?? 1),
+          (currentAnalogyPuzzle.context2BaseVector[3] ?? 0) * (currentAnalogyPuzzle.context2Modifiers[3] ?? 1),
+        ];
+        onUpdateContextDetails({
+          dimension: selectedDim,
+          baseVector: currentAnalogyPuzzle.context2BaseVector,
+          projectedVector: projVecC2,
+          baseRelationName: describeContextVector(currentAnalogyPuzzle.context2BaseVector, selectedDim),
+          projectedRelationName: describeContextVector(projVecC2, selectedDim),
+          nodeDefinitions: currentAnalogyPuzzle.nodeDefinitions,
+          contextVehicles: currentAnalogyPuzzle.contextVehicles,
+          queryNode: currentAnalogyPuzzle.nodeC,
+          queryTarget: currentAnalogyPuzzle.nodeD,
+          selectedAnswerText: '',
+          selectedAnswerLetter: '',
+          isSubmitted: isSubmitted,
+          activeModifiers: currentAnalogyPuzzle.context2Modifiers
+        });
+      } else if (activeAnalogyTab === 'ctx3' && currentAnalogyPuzzle.context3BaseVector && currentAnalogyPuzzle.context3Modifiers) {
+        const projVecC3 = [
+          currentAnalogyPuzzle.context3BaseVector[0] * currentAnalogyPuzzle.context3Modifiers[0],
+          currentAnalogyPuzzle.context3BaseVector[1] * currentAnalogyPuzzle.context3Modifiers[1],
+          (currentAnalogyPuzzle.context3BaseVector[2] ?? 0) * (currentAnalogyPuzzle.context3Modifiers[2] ?? 1),
+          (currentAnalogyPuzzle.context3BaseVector[3] ?? 0) * (currentAnalogyPuzzle.context3Modifiers[3] ?? 1),
+        ];
+        onUpdateContextDetails({
+          dimension: selectedDim,
+          baseVector: currentAnalogyPuzzle.context3BaseVector,
+          projectedVector: projVecC3,
+          baseRelationName: describeContextVector(currentAnalogyPuzzle.context3BaseVector, selectedDim),
+          projectedRelationName: describeContextVector(projVecC3, selectedDim),
+          nodeDefinitions: currentAnalogyPuzzle.nodeDefinitions,
+          contextVehicles: currentAnalogyPuzzle.contextVehicles,
+          queryNode: currentAnalogyPuzzle.nodeE ?? '',
+          queryTarget: currentAnalogyPuzzle.nodeF ?? '',
+          selectedAnswerText: '',
+          selectedAnswerLetter: '',
+          isSubmitted: isSubmitted,
+          activeModifiers: currentAnalogyPuzzle.context3Modifiers
+        });
+      } else if (activeAnalogyTab === 'ctx4' && currentAnalogyPuzzle.context4BaseVector && currentAnalogyPuzzle.context4Modifiers) {
+        const projVecC4 = [
+          currentAnalogyPuzzle.context4BaseVector[0] * currentAnalogyPuzzle.context4Modifiers[0],
+          currentAnalogyPuzzle.context4BaseVector[1] * currentAnalogyPuzzle.context4Modifiers[1],
+          (currentAnalogyPuzzle.context4BaseVector[2] ?? 0) * (currentAnalogyPuzzle.context4Modifiers[2] ?? 1),
+          (currentAnalogyPuzzle.context4BaseVector[3] ?? 0) * (currentAnalogyPuzzle.context4Modifiers[3] ?? 1),
+        ];
+        onUpdateContextDetails({
+          dimension: selectedDim,
+          baseVector: currentAnalogyPuzzle.context4BaseVector,
+          projectedVector: projVecC4,
+          baseRelationName: describeContextVector(currentAnalogyPuzzle.context4BaseVector, selectedDim),
+          projectedRelationName: describeContextVector(projVecC4, selectedDim),
+          nodeDefinitions: currentAnalogyPuzzle.nodeDefinitions,
+          contextVehicles: currentAnalogyPuzzle.contextVehicles,
+          queryNode: currentAnalogyPuzzle.nodeG ?? '',
+          queryTarget: currentAnalogyPuzzle.nodeH ?? '',
+          selectedAnswerText: '',
+          selectedAnswerLetter: '',
+          isSubmitted: isSubmitted,
+          activeModifiers: currentAnalogyPuzzle.context4Modifiers
+        });
+      }
+    }
+  }, [workoutMode, currentAnalogyPuzzle, activeAnalogyTab, isSubmitted, selectedDim]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -999,7 +1937,7 @@ export default function TrainingWorkspace({
     if (isSubmitted) return;
     if (workoutMode === 'classic') {
       setSelectedAnswerIdx(idx);
-    } else {
+    } else if (workoutMode === 'context') {
       setSelectedCtxAnswerIdx(idx);
 
       if (currentCtxPuzzle) {
@@ -1036,6 +1974,8 @@ export default function TrainingWorkspace({
           activeModifiers: aggregateScales
         });
       }
+    } else if (workoutMode === 'analogy') {
+      setSelectedAnalogyAnswerIdx(idx);
     }
   };
 
@@ -1084,7 +2024,7 @@ export default function TrainingWorkspace({
       };
 
       onUpdateStats(newStats);
-    } else {
+    } else if (workoutMode === 'context') {
       if (selectedCtxAnswerIdx === null || isSubmitted || !currentCtxPuzzle) return;
 
       setIsSubmitted(true);
@@ -1161,6 +2101,50 @@ export default function TrainingWorkspace({
         isSubmitted: true,
         activeModifiers: aggregateScales
       });
+    } else if (workoutMode === 'analogy') {
+      if (selectedAnalogyAnswerIdx === null || isSubmitted || !currentAnalogyPuzzle) return;
+
+      setIsSubmitted(true);
+      const selectedOption = currentAnalogyPuzzle.options[selectedAnalogyAnswerIdx];
+      const isCorrect = selectedOption.isCorrect;
+      const timeTakenMs = seconds * 1000;
+
+      const difficultyMultiplier: Record<PuzzleDifficulty, number> = {
+        'Beginner': 150,
+        'Intermediate': 300,
+        'Advanced': 600,
+        'Master': 1200
+      };
+
+      const speedBonus = Math.max(0, Math.floor((120 - seconds) * 1.5));
+      const scoreGained = isCorrect ? (difficultyMultiplier[currentAnalogyPuzzle.difficulty] + speedBonus) : 0;
+
+      const newStreak = isCorrect ? stats.streak + 1 : 0;
+      const newTotalAnswered = stats.totalAnswered + 1;
+      const newTotalCorrect = isCorrect ? stats.totalCorrect + 1 : stats.totalCorrect;
+      const newAccuracy = Math.round((newTotalCorrect / newTotalAnswered) * 100);
+      const newAverageTimeMs = Math.round(((stats.averageTimeMs * stats.totalAnswered) + timeTakenMs) / newTotalAnswered);
+
+      const historyItem = {
+        timestamp: Date.now(),
+        correct: isCorrect,
+        timeMs: timeTakenMs,
+        dimension: currentAnalogyPuzzle.dimension,
+        difficulty: currentAnalogyPuzzle.difficulty,
+        scoreGained
+      };
+
+      const newStats: TrainingStats = {
+        score: stats.score + scoreGained,
+        streak: newStreak,
+        accuracy: newAccuracy,
+        totalAnswered: newTotalAnswered,
+        totalCorrect: newTotalCorrect,
+        averageTimeMs: newAverageTimeMs,
+        history: [historyItem, ...stats.history]
+      };
+
+      onUpdateStats(newStats);
     }
   };
 
@@ -1200,6 +2184,17 @@ export default function TrainingWorkspace({
         >
           <Compass className="w-4 h-4" />
           Context
+        </button>
+        <button
+          onClick={() => setWorkoutMode('analogy')}
+          className={`flex-1 py-1.5 text-theme-text text-xs font-sans font-bold flex items-center justify-center gap-2 uppercase tracking-wide cursor-pointer rounded-none transition-all duration-150 ${
+            workoutMode === 'analogy'
+              ? 'bg-theme-comp text-theme-bg'
+              : 'text-theme-text hover:bg-theme-comp/10'
+          }`}
+        >
+          <Zap className="w-4 h-4" />
+          Cross-Context Analogy
         </button>
       </div>
 
@@ -1539,6 +2534,80 @@ export default function TrainingWorkspace({
                   </div>
 
                 </div>
+
+                {generatorMode === 'custom' && workoutMode === 'analogy' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-theme-comp/10 pt-3" id="analogy-extension-controls">
+                    {/* Analogy Chain Length */}
+                    <div className="flex flex-col gap-1.5" id="analogy-chain-length-control">
+                      <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase" style={{ color: 'var(--text-color)' }}>Analogy Chain Length</span>
+                      <div className="grid grid-cols-2 gap-0.5 bg-theme-bg p-0.5 border border-theme-comp/40">
+                        {([2, 3] as const).map(len => (
+                          <button
+                            key={len}
+                            id={`btn-analogy-len-${len}`}
+                            onClick={() => {
+                              setCustomAnalogyLength(len);
+                              if (len === 3) setCustomAnalogyStructure('standard');
+                            }}
+                            className={`py-1 text-[9px] font-mono font-bold uppercase transition-all duration-150 cursor-pointer ${
+                              customAnalogyLength === len
+                                ? 'bg-theme-comp text-theme-bg'
+                                : 'text-theme-text hover:bg-theme-comp/10'
+                            }`}
+                          >
+                            {len === 2 ? '2-Way (A:B :: C:D)' : '3-Way Chain (A:B :: C:D :: E:F)'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Context Composition Depth */}
+                    <div className="flex flex-col gap-1.5" id="analogy-composition-depth-control">
+                      <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase" style={{ color: 'var(--text-color)' }}>Context Composition Depth</span>
+                      <div className="grid grid-cols-3 gap-0.5 bg-theme-bg p-0.5 border border-theme-comp/40">
+                        {([1, 2, 3] as const).map(depth => (
+                          <button
+                            key={depth}
+                            id={`btn-analogy-depth-${depth}`}
+                            onClick={() => setCustomAnalogyDepth(depth)}
+                            className={`py-1 text-[9px] font-mono font-bold uppercase transition-all duration-150 cursor-pointer ${
+                              customAnalogyDepth === depth
+                                ? 'bg-theme-comp text-theme-bg'
+                                : 'text-theme-text hover:bg-theme-comp/10'
+                            }`}
+                          >
+                            {depth === 1 ? 'Depth 1 (C)' : depth === 2 ? 'Depth 2 (C1 ∘ C2)' : 'Depth 3 (C1 ∘ C2 ∘ C3)'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Analogy Structure / Pattern */}
+                    <div className="flex flex-col gap-1.5" id="analogy-pattern-control">
+                      <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase" style={{ color: 'var(--text-color)' }}>Analogy Pattern</span>
+                      <div className="grid grid-cols-2 gap-0.5 bg-theme-bg p-0.5 border border-theme-comp/40">
+                        {(['standard', 'nested'] as const).map(pattern => (
+                          <button
+                            key={pattern}
+                            disabled={pattern === 'nested' && customAnalogyLength === 3}
+                            id={`btn-analogy-pattern-${pattern}`}
+                            onClick={() => setCustomAnalogyStructure(pattern)}
+                            className={`py-1 text-[9px] font-mono font-bold uppercase transition-all duration-150 cursor-pointer ${
+                              pattern === 'nested' && customAnalogyLength === 3
+                                ? 'opacity-25 cursor-not-allowed text-stone-500'
+                                : customAnalogyStructure === pattern
+                                  ? 'bg-theme-comp text-theme-bg'
+                                  : 'text-theme-text hover:bg-theme-comp/10'
+                            }`}
+                          >
+                            {pattern === 'standard' ? 'Standard' : 'Nested (Cross-Cross)'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
           </div>
@@ -1556,12 +2625,19 @@ export default function TrainingWorkspace({
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(var(--main-color-complementary) 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
                <Brain className="w-16 h-16 text-theme-comp/75 stroke-[1.2] mb-4" />
           <h3 className="font-serif italic text-xl text-theme-text mb-2 uppercase tracking-wide">
-            {workoutMode === 'classic' ? 'Classic Vector Deduction System' : 'Mutational Context Space Initiator'}
+            {workoutMode === 'classic' 
+              ? 'Classic Vector Deduction System' 
+              : workoutMode === 'context' 
+                ? 'Mutational Context Space Initiator'
+                : 'Cross-Context Analogy Matrix'
+            }
           </h3>
           <p className="font-sans text-theme-text max-w-md text-xs leading-relaxed mb-6 opacity-80">
             {workoutMode === 'classic' 
               ? 'Deconstruct multi-dimensional coordinate displacement graphs. Use spatial deduction matrices to solve absolute coordinates of query nodes relative to target benchmarks.'
-              : 'Evaluate absolute vector definitions under active linear context shifts. Compile and modify axis directions to predict mutated coordinate vectors across hyperspatial maps.'
+              : workoutMode === 'context'
+                ? 'Evaluate absolute vector definitions under active linear context shifts. Compile and modify axis directions to predict mutated coordinate vectors across hyperspatial maps.'
+                : 'Align and solve spatial relations across parallel topological frameworks. Predict analogous vector mapping shifts across divergent multi-dimensional spaces.'
             }
           </p>
           <button
@@ -1715,7 +2791,7 @@ export default function TrainingWorkspace({
             </div>
           </div>
         </div>
-      ) : (
+      ) : workoutMode === 'context' ? (
         // PLAYGROUND: CONTEXT MUTATOR MODE (Relational Workout "Context")
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           
@@ -1923,6 +2999,338 @@ export default function TrainingWorkspace({
                     >
                       <RotateCw className="w-3.5 h-3.5" />
                       <span>Request Next Coordinate Domain</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        // PLAYGROUND: CROSS CONTEXT ANALOGY MODE
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch" id="analogy-playground-view">
+          
+          {/* Left Panel: Context Rules and Inquiry */}
+          <div className="lg:col-span-7 flex flex-col gap-4 bg-theme-card border border-theme-comp p-6 shadow-sm relative overflow-hidden">
+            <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(var(--main-color-complementary) 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+            
+            <div className="flex justify-between items-center border-b border-theme-comp/30 pb-3 mb-2 z-10 select-none">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-theme-text">
+                <ShieldCheck className="w-3.5 h-3.5 text-theme-comp" />
+                <span>Cross-Context Analogy Engine ({currentAnalogyPuzzle?.difficulty})</span>
+              </div>
+              <div className="flex items-center gap-1 bg-theme-bg border border-theme-comp/30 py-1 px-2.5">
+                <Clock className="w-3.5 h-3.5 text-theme-comp" />
+                <span className="font-mono text-xs font-bold text-theme-text">{formatTime(seconds)}</span>
+              </div>
+            </div>
+
+            {/* Visualizer selector tab */}
+            <div className="flex bg-theme-bg p-0.5 border border-theme-comp/20 z-10 select-none flex-wrap gap-0.5">
+              <button
+                onClick={() => setActiveAnalogyTab('ctx1')}
+                className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                  activeAnalogyTab === 'ctx1'
+                    ? 'bg-theme-comp text-theme-bg'
+                    : 'text-theme-text hover:bg-theme-comp/10'
+                }`}
+              >
+                <Sliders className="w-3 h-3" />
+                Context {currentAnalogyPuzzle?.context1} Space
+              </button>
+              <button
+                onClick={() => setActiveAnalogyTab('ctx2')}
+                className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                  activeAnalogyTab === 'ctx2'
+                    ? 'bg-theme-comp text-theme-bg'
+                    : 'text-theme-text hover:bg-theme-comp/10'
+                }`}
+              >
+                <Sliders className="w-3 h-3" />
+                Context {currentAnalogyPuzzle?.context2} Space
+              </button>
+              {currentAnalogyPuzzle?.context3 && (
+                <button
+                  onClick={() => setActiveAnalogyTab('ctx3')}
+                  className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                    activeAnalogyTab === 'ctx3'
+                      ? 'bg-theme-comp text-theme-bg'
+                      : 'text-theme-text hover:bg-theme-comp/10'
+                  }`}
+                >
+                  <Sliders className="w-3 h-3" />
+                  Context {currentAnalogyPuzzle.context3} Space
+                </button>
+              )}
+              {currentAnalogyPuzzle?.context4 && (
+                <button
+                  onClick={() => setActiveAnalogyTab('ctx4')}
+                  className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                    activeAnalogyTab === 'ctx4'
+                      ? 'bg-theme-comp text-theme-bg'
+                      : 'text-theme-text hover:bg-theme-comp/10'
+                  }`}
+                >
+                  <Sliders className="w-3 h-3" />
+                  Context {currentAnalogyPuzzle.context4} Space
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2.5 z-10 select-text">
+              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Base Node Positions:</p>
+              <div className="flex flex-col gap-1.5 font-sans text-xs">
+                {currentAnalogyPuzzle?.nodeDefinitions.map((def, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/40 px-3 py-1.5">
+                    <span className="flex items-center gap-2 flex-wrap text-theme-text font-medium">
+                      <span className="w-1.5 h-1.5 border border-theme-comp rotate-45"></span>
+                      <strong className="text-theme-text font-mono">{def.node}</strong>
+                      <span className="opacity-80 font-serif italic">is</span>
+                      <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
+                      <span className="opacity-80 font-serif italic">of</span>
+                      <strong className="text-theme-text font-mono">{def.targetNode}</strong>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 z-10 mt-1 select-text">
+              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Context Definitions:</p>
+              <div className="flex flex-col gap-1.5 font-sans">
+                {currentAnalogyPuzzle?.contextVehicles.map((ctx, idx) => {
+                  const isC1 = ctx.id === currentAnalogyPuzzle?.context1;
+                  const isC2 = ctx.id === currentAnalogyPuzzle?.context2;
+                  const isC3 = !!currentAnalogyPuzzle?.context3 && ctx.id === currentAnalogyPuzzle.context3;
+                  const isC4 = !!currentAnalogyPuzzle?.context4 && ctx.id === currentAnalogyPuzzle.context4;
+                  const highlight = isC1 || isC2 || isC3 || isC4;
+                  return (
+                    <div key={idx} className={`flex items-center justify-between bg-theme-bg border px-4 py-1.5 text-xs ${highlight ? 'border-theme-comp font-bold' : 'border-theme-comp/20 opacity-60'}`}>
+                      <span className="flex items-center gap-2 flex-wrap font-mono text-theme-text">
+                        <Sliders className="w-3.5 h-3.5 text-theme-comp" />
+                        <span>{ctx.text}</span>
+                      </span>
+                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 border uppercase ${
+                        ctx.isAnchor ? 'bg-theme-bg border-theme-comp/30 text-theme-text' : 'bg-theme-comp/15 text-theme-accent'
+                      }`}>
+                        {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Analogy inquiry formulation */}
+            <div className="bg-theme-bg border border-theme-comp p-5 my-2 z-10 select-text font-sans">
+              <div className="flex gap-3 items-start">
+                <HelpCircle className="w-6 h-6 shrink-0 mt-0.5 text-theme-comp animate-pulse" />
+                <div className="flex flex-col flex-1">
+                  <p className="text-xs font-mono font-bold text-theme-text uppercase tracking-wide opacity-65">Cognitive Analogy Statement</p>
+                  
+                  {currentAnalogyPuzzle?.analogyStructureType === 'nested' ? (
+                    // NESTED DOUBLE ANALOGY (Cross-Cross)
+                    <div className="flex flex-col gap-2 mt-3 p-4 bg-theme-card border border-theme-comp/40">
+                      
+                      <div className="text-center font-mono text-[9px] uppercase tracking-wider text-theme-text/40 mb-1">- Left Meta Relation -</div>
+                      <div className="flex flex-col gap-1 border border-theme-comp/10 p-2.5 bg-theme-bg/30">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1}</span>
+                          <span className="text-xs font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeA} : {currentAnalogyPuzzle.nodeB}</span>
+                        </div>
+                        <div className="text-center italic font-serif text-[10px] opacity-50">::</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2}</span>
+                          <span className="text-xs font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeC} : {currentAnalogyPuzzle.nodeD}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-center italic font-serif text-sm py-2 text-theme-accent font-extrabold select-none">is meta-analogous to</div>
+
+                      <div className="text-center font-mono text-[9px] uppercase tracking-wider text-theme-text/40 mb-1">- Right Meta Relation -</div>
+                      <div className="flex flex-col gap-1 border border-theme-comp/10 p-2.5 bg-theme-bg/30">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context3}</span>
+                          <span className="text-xs font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeE} : {currentAnalogyPuzzle.nodeF}</span>
+                        </div>
+                        <div className="text-center italic font-serif text-[10px] opacity-50">::</div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context4}</span>
+                          <span className="text-xs font-mono font-bold text-theme-text">
+                            {currentAnalogyPuzzle.nodeG} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeH}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
+                  ) : currentAnalogyPuzzle?.analogyChainLength === 3 ? (
+                    // 3-WAY CHAIN COMPARISON
+                    <div className="flex flex-col gap-2 mt-3 p-4 bg-theme-card border border-theme-comp/40">
+                      
+                      <div className="flex items-center justify-between border-b border-theme-comp/10 pb-2">
+                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1} (Term 1)</span>
+                        <span className="text-xs font-mono font-bold text-theme-text">
+                          <span className="text-theme-accent font-extrabold">{currentAnalogyPuzzle.nodeA}</span> : {currentAnalogyPuzzle.nodeB}
+                        </span>
+                      </div>
+                      
+                      <div className="text-center italic font-serif text-sm py-1 opacity-70">::</div>
+                      
+                      <div className="flex items-center justify-between py-2 bg-theme-bg/20 border-y border-theme-comp/5">
+                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2} (Term 2)</span>
+                        <span className="text-xs font-mono font-bold text-theme-text">
+                          {currentAnalogyPuzzle.nodeC} : {currentAnalogyPuzzle.nodeD}
+                        </span>
+                      </div>
+
+                      <div className="text-center italic font-serif text-sm py-1 opacity-70">::</div>
+
+                      <div className="flex items-center justify-between border-t border-theme-comp/10 pt-2">
+                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context3} (Term 3)</span>
+                        <span className="text-xs font-mono font-bold text-theme-text flex items-center gap-1">
+                          {currentAnalogyPuzzle.nodeE} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeF}</span>
+                        </span>
+                      </div>
+
+                    </div>
+                  ) : (
+                    // CLASSIC STANDARD & COMPOUND 2-WAY
+                    <div className="flex flex-col gap-2 mt-3 p-4 bg-theme-card border border-theme-comp/40">
+                      <div className="flex items-center justify-between border-b border-theme-comp/10 pb-2">
+                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle?.context1} (Term 1)</span>
+                        <span className="text-xs font-mono font-bold text-theme-text">
+                          <span className="text-theme-accent font-extrabold">{currentAnalogyPuzzle?.nodeA}</span> : {currentAnalogyPuzzle?.nodeB}
+                        </span>
+                      </div>
+                      
+                      <div className="text-center italic font-serif text-sm py-1 opacity-70">is analogous to</div>
+                      
+                      <div className="flex items-center justify-between border-t border-theme-comp/10 pt-2">
+                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle?.context2} (Term 2)</span>
+                        <span className="text-xs font-mono font-bold text-theme-text">
+                          {currentAnalogyPuzzle?.nodeC} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle?.nodeD}</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-theme-text text-xs leading-relaxed mt-4">
+                    {currentAnalogyPuzzle?.analogyStructureType === 'nested'
+                      ? `Determine if the relationship difference (Left Meta Offset) between Context ${currentAnalogyPuzzle.context1} and ${currentAnalogyPuzzle.context2} aligns perfectly with the difference (Right Meta Offset) between Context ${currentAnalogyPuzzle.context3} and ${currentAnalogyPuzzle.context4}.`
+                      : currentAnalogyPuzzle?.analogyChainLength === 3
+                        ? `Evaluate whether the spatial relationships across all 3 Terms after applying their respective context modifiers are completely congruent.`
+                        : `Evaluate whether the spatial relationship in Term 1 (under Context ${currentAnalogyPuzzle?.context1}) matches exactly with the relationship in Term 2 (under Context ${currentAnalogyPuzzle?.context2}) after respective shift products are applied.`
+                    }
+                  </p>
+                  
+                  <div className="mt-3.5 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-3 flex-wrap gap-2">
+                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
+                    <button
+                      onClick={() => setShowAnalogyExplanation(prev => !prev)}
+                      className="px-3 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-[11px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"
+                    >
+                      <Brain className="w-3.5 h-3.5" />
+                      {showAnalogyExplanation ? 'Hide Derivation' : 'Explain Process'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Explanation Display Block */}
+            {showAnalogyExplanation && currentAnalogyPuzzle && (
+              <div className="bg-theme-bg border border-theme-comp p-4 mb-3 text-xs font-mono z-10 select-text animate-fadeIn">
+                <div className="flex items-center gap-1.5 text-theme-text font-bold border-b border-theme-comp pb-2 mb-2.5 uppercase tracking-wide text-[10px]">
+                  <Activity className="w-4 h-4 text-theme-comp animate-pulse" />
+                  <span>Analogy Logic Resolution Log</span>
+                </div>
+                <div className="space-y-3.5 text-theme-text leading-relaxed text-[11px] md-content">
+                  {currentAnalogyPuzzle.explanation.split('\n\n').map((paragraph, pIdx) => (
+                    <p key={pIdx} dangerouslySetInnerHTML={{ 
+                      __html: paragraph
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\$(.*?)\$/g, '<code class="bg-theme-card border border-theme-comp/20 px-1 font-mono">$1</code>')
+                    }} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* Right Panel: Multiple Choice Answer Cards */}
+          <div className="lg:col-span-5 flex flex-col gap-4" id="analogy-options-view">
+            <div className="bg-theme-card border border-theme-comp p-5 shadow-sm flex flex-col flex-1">
+              <span className="text-xs font-mono text-theme-text font-bold uppercase tracking-wider mb-3">SELECT TRUTH VALUE</span>
+              
+              <div className="flex flex-col gap-2.5 flex-1 justify-center select-none">
+                {currentAnalogyPuzzle?.options.map((opt, idx) => {
+                  const isSelected = selectedAnalogyAnswerIdx === idx;
+                  let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
+                  
+                  if (isSelected) {
+                    cardStyle = "border-2 border-theme-comp bg-theme-comp text-theme-bg font-bold";
+                  }
+
+                  if (isSubmitted) {
+                    if (opt.isCorrect) {
+                      cardStyle = "border-2 border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
+                    } else if (isSelected) {
+                      cardStyle = "border-2 border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
+                    } else {
+                      cardStyle = "border-theme-comp/20 bg-theme-bg/20 opacity-40 cursor-not-allowed";
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => handleSelectAnswer(idx)}
+                      disabled={isSubmitted}
+                      className={`w-full text-left p-3.5 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none ${cardStyle}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`w-5 h-5 border text-[10px] font-mono flex items-center justify-center font-bold rounded-none ${
+                          isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
+                        }`}>
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                        <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.text}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-theme-comp select-none">
+                {!isSubmitted ? (
+                  <button
+                    onClick={handleSubmitAnswer}
+                    disabled={selectedAnalogyAnswerIdx === null}
+                    className="w-full bg-theme-comp hover:bg-theme-comp/90 disabled:opacity-30 disabled:cursor-not-allowed text-theme-bg text-xs font-mono font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 uppercase tracking-widest h-[44px]"
+                  >
+                    <span>Submit Analogy Resolution</span>
+                    <ArrowRight className="w-4 h-4 ml-0.5" />
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <div className="text-center py-1 text-xs font-sans font-bold uppercase tracking-wider">
+                      {currentAnalogyPuzzle?.options[selectedAnalogyAnswerIdx ?? 0]?.isCorrect ? (
+                        <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
+                          <Trophy className="w-4 h-4" /> SUCCESS • +{150 + Math.max(0, Math.floor((120 - seconds) * 1.5))} SCORE GAINED
+                        </span>
+                      ) : (
+                        <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
+                          ANALOGOUS RESOLUTION MISALIGNED
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleNextPuzzle}
+                      className="w-full bg-theme-comp hover:bg-theme-comp/90 text-theme-bg text-xs font-sans font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wide h-[44px]"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Request Next Analogy Matrix</span>
                     </button>
                   </div>
                 )}
