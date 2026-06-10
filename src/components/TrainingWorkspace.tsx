@@ -117,6 +117,7 @@ export function generateContextPuzzle(
   customSettings?: {
     useCustom: boolean;
     anchorCount: number;
+    anchorDefinitionsCount?: number;
     shiftsPerAnchor: number;
     interrelation: 'chain' | 'cross';
     scaleType: 'integer' | 'mixed';
@@ -151,7 +152,9 @@ export function generateContextPuzzle(
 
   // Dynamic node & offset generator up to 12 anchors
   const maxNodesNeeded = (customSettings && customSettings.useCustom)
-    ? Math.max(5, (customSettings.anchorCount || 0) + 1)
+    ? (customSettings.anchorDefinitionsCount !== undefined
+        ? Math.max(3, customSettings.anchorDefinitionsCount + 1)
+        : Math.max(5, (customSettings.anchorCount || 0) + 1))
     : (dim >= 4 ? 5 : (dim === 3 ? 4 : 3));
 
   const itemNames = generateUniqueCVCNames(maxNodesNeeded);
@@ -883,6 +886,7 @@ export default function TrainingWorkspace({
 
   // Custom configuration states
   const [generatorMode, setGeneratorMode] = useState<'preset' | 'custom'>('preset');
+  const [customAnchorDefinitions, setCustomAnchorDefinitions] = useState<number>(4);
   const [customAnchors, setCustomAnchors] = useState<number>(2);
   const [customShiftsCount, setCustomShiftsCount] = useState<number>(2);
   const [customInterrelation, setCustomInterrelation] = useState<'chain' | 'cross'>('chain');
@@ -927,6 +931,7 @@ export default function TrainingWorkspace({
       const newCtxPuzzle = generateContextPuzzle(selectedDim, difficulty, {
         useCustom: generatorMode === 'custom',
         anchorCount: customAnchors,
+        anchorDefinitionsCount: customAnchorDefinitions,
         shiftsPerAnchor: customShiftsCount,
         interrelation: customInterrelation,
         scaleType: 'integer',
@@ -1352,8 +1357,30 @@ export default function TrainingWorkspace({
             ) : (
               // Context mode custom options (fully comprehensive)
               <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   
+                  {/* Anchor Definitions count */}
+                  <div className="flex flex-col gap-1.5" id="context-definitions-control">
+                    <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase">Anchor Definitions Pool</span>
+                    <div className="flex items-center gap-2 bg-theme-card p-1.5 border border-theme-comp/40 h-[34px]">
+                      <input
+                        type="number"
+                        min={2}
+                        max={12}
+                        value={customAnchorDefinitions}
+                        onChange={(e) => {
+                          const val = Math.max(2, Math.min(12, parseInt(e.target.value) || 2));
+                          setCustomAnchorDefinitions(val);
+                          if (customAnchors > val) {
+                            setCustomAnchors(val);
+                          }
+                        }}
+                        className="w-full bg-transparent text-xs font-mono font-bold text-theme-text focus:outline-none px-1 border-none"
+                      />
+                      <span className="text-[9px] font-mono font-bold text-theme-text/50 pr-1 uppercase whitespace-nowrap">2-12 Max</span>
+                    </div>
+                  </div>
+
                   {/* Anchor Count Parameter */}
                   <div className="flex flex-col gap-1.5" id="context-anchors-control">
                     <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase">Relative Anchors</span>
@@ -1361,19 +1388,19 @@ export default function TrainingWorkspace({
                       <input
                         type="number"
                         min={1}
-                        max={12}
+                        max={customAnchorDefinitions}
                         value={customAnchors}
                         onChange={(e) => {
-                          const val = Math.max(1, Math.min(12, parseInt(e.target.value) || 1));
+                          const val = Math.max(1, Math.min(customAnchorDefinitions, parseInt(e.target.value) || 1));
                           setCustomAnchors(val);
                         }}
                         className="w-full bg-transparent text-xs font-mono font-bold text-theme-text focus:outline-none px-1 border-none"
                       />
-                      <span className="text-[9px] font-mono font-bold text-theme-text/50 pr-1 uppercase whitespace-nowrap">1-12 Max</span>
+                      <span className="text-[9px] font-mono font-bold text-theme-text/50 pr-1 uppercase whitespace-nowrap">1-{customAnchorDefinitions} Max</span>
                     </div>
                   </div>
-
-                  {/* Shift Registers Depth Count */}
+ 
+                   {/* Shift Registers Depth Count */}
                   <div className="flex flex-col gap-1.5" id="context-pipeline-depth-control">
                     <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase">Shift Pipeline Depth</span>
                     <div className="flex items-center gap-2 bg-theme-card p-1.5 border border-theme-comp/40 h-[34px]">
@@ -1391,8 +1418,8 @@ export default function TrainingWorkspace({
                       <span className="text-[9px] font-mono font-bold text-theme-text/50 pr-1 uppercase whitespace-nowrap">0-10 Ops</span>
                     </div>
                   </div>
-
-                  {/* Cross-channel references option */}
+ 
+                   {/* Cross-channel references option */}
                   <div className="flex flex-col gap-1.5" id="context-interrelation-control">
                     <span className="text-[10px] font-mono text-theme-text/75 font-bold uppercase">Register Interrelation</span>
                     <div className="grid grid-cols-2 gap-0.5 bg-theme-card p-0.5 border border-theme-comp/40 h-[34px]">
@@ -1757,7 +1784,7 @@ export default function TrainingWorkspace({
                   </p>
                   
                   <div className="mt-3.5 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-3 flex-wrap gap-2">
-                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help visualising the transformations?</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
                     <button
                       onClick={() => setShowCtxExplanation(prev => !prev)}
                       className="px-3 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-[11px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"
