@@ -2899,43 +2899,23 @@ export default function TrainingWorkspace({
             <div className="flex flex-col gap-2 z-10 mt-1 select-text">
               <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Context Window Switches (Active Stack):</p>
               <div className="flex flex-col gap-1.5 font-sans">
-                {currentCtxPuzzle?.contextVehicles.map((ctx, idx) => {
-                  const deps = getContextDependencies(ctx);
-                  return (
-                    <div key={idx} className="flex flex-col gap-1 bg-theme-bg border border-theme-comp/30 px-4 py-2 text-xs">
-                      <div className="flex items-center justify-between w-full">
-                        <span className="flex items-center gap-2 flex-wrap font-mono font-bold text-theme-text">
-                          <Sliders className="w-3.5 h-3.5 text-theme-comp" />
-                          <span>{ctx.text}</span>
-                        </span>
-                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 border uppercase ${
-                          ctx.isAnchor
-                            ? 'bg-theme-bg border-theme-comp/30 text-theme-text'
-                            : ctx.shiftMultiplier < 0 
-                              ? 'bg-theme-comp/10 border-theme-comp/50 text-theme-accent' 
-                              : 'bg-theme-comp/20 border-theme-comp text-theme-accent'
-                        }`}>
-                          {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
-                        </span>
-                      </div>
-                      {deps.length > 0 && (
-                        <div className="text-[10px] font-mono mt-1 pl-5.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-theme-text/50">↳ depends on:</span>
-                          {deps.map((depId, idx_dep) => {
-                            const depCtx = currentCtxPuzzle?.contextVehicles.find(v => v.id === depId);
-                            return (
-                              <span key={depId} className="flex items-center gap-1 bg-theme-comp/5 border border-theme-comp/20 px-1 py-0.5" title={depCtx?.text}>
-                                <span className="font-bold text-theme-accent">Context {depId}</span>
-                                {depCtx && <span className="text-[9px] text-theme-text/80">({depCtx.isAnchor ? 'RelVec' : depCtx.shiftMultiplier < 0 ? 'Inv' : 'Scale'})</span>}
-                                {idx_dep < deps.length - 1 && <span className="text-theme-text/30">,</span>}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {currentCtxPuzzle?.contextVehicles.map((ctx, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/30 px-4 py-2 text-xs">
+                    <span className="flex items-center gap-2 flex-wrap font-mono font-bold text-theme-text">
+                      <Sliders className="w-3.5 h-3.5 text-theme-comp" />
+                      <span>{ctx.text}</span>
+                    </span>
+                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 border uppercase ${
+                      ctx.isAnchor
+                        ? 'bg-theme-bg border-theme-comp/30 text-theme-text'
+                        : ctx.shiftMultiplier < 0 
+                          ? 'bg-theme-comp/10 border-theme-comp/50 text-theme-accent' 
+                          : 'bg-theme-comp/20 border-theme-comp text-theme-accent'
+                    }`}>
+                      {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -3193,35 +3173,17 @@ export default function TrainingWorkspace({
                   const isC3 = !!currentAnalogyPuzzle?.context3 && ctx.id === currentAnalogyPuzzle.context3;
                   const isC4 = !!currentAnalogyPuzzle?.context4 && ctx.id === currentAnalogyPuzzle.context4;
                   const highlight = isC1 || isC2 || isC3 || isC4;
-                  const deps = getContextDependencies(ctx);
                   return (
-                    <div key={idx} className={`flex flex-col gap-1 bg-theme-bg border px-4 py-2 text-xs ${highlight ? 'border-theme-comp font-bold' : 'border-theme-comp/20 opacity-60'}`}>
-                      <div className="flex items-center justify-between w-full">
-                        <span className="flex items-center gap-2 flex-wrap font-mono text-theme-text">
-                          <Sliders className="w-3.5 h-3.5 text-theme-comp" />
-                          <span>{ctx.text}</span>
-                        </span>
-                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 border uppercase ${
-                          ctx.isAnchor ? 'bg-theme-bg border-theme-comp/30 text-theme-text' : 'bg-theme-comp/15 text-theme-accent'
-                        }`}>
-                          {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
-                        </span>
-                      </div>
-                      {deps.length > 0 && (
-                        <div className="text-[10px] font-mono mt-1 pl-5.5 flex items-center gap-1.5 flex-wrap">
-                          <span className="text-theme-text/50">↳ depends on:</span>
-                          {deps.map((depId, idx_dep) => {
-                            const depCtx = currentAnalogyPuzzle?.contextVehicles.find(v => v.id === depId);
-                            return (
-                              <span key={depId} className="flex items-center gap-1 bg-theme-comp/5 border border-theme-comp/20 px-1 py-0.5" title={depCtx?.text}>
-                                <span className="font-bold text-theme-accent">Context {depId}</span>
-                                {depCtx && <span className="text-[9px] text-theme-text/80">({depCtx.isAnchor ? 'RelVec' : depCtx.shiftMultiplier < 0 ? 'Inv' : 'Scale'})</span>}
-                                {idx_dep < deps.length - 1 && <span className="text-theme-text/30">,</span>}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
+                    <div key={idx} className={`flex items-center justify-between bg-theme-bg border px-4 py-2 text-xs ${highlight ? 'border-theme-comp font-bold' : 'border-theme-comp/20 opacity-60'}`}>
+                      <span className="flex items-center gap-2 flex-wrap font-mono text-theme-text">
+                        <Sliders className="w-3.5 h-3.5 text-theme-comp" />
+                        <span>{ctx.text}</span>
+                      </span>
+                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 border uppercase ${
+                        ctx.isAnchor ? 'bg-theme-bg border-theme-comp/30 text-theme-text' : 'bg-theme-comp/15 text-theme-accent'
+                      }`}>
+                        {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                      </span>
                     </div>
                   );
                 })}
