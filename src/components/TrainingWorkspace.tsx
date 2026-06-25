@@ -3,8 +3,10 @@ import { DimensionCount, Puzzle, PuzzleDifficulty, TrainingStats } from '../type
 import { generateTrainerPuzzle, getBasisRelations, generateUniqueCVCNames } from '../utils/engine';
 import { 
   Brain, Trophy, Clock, ShieldCheck, HelpCircle, 
-  ArrowRight, RotateCw, Activity, Compass, Sliders, Zap 
+  ArrowRight, RotateCw, Activity, Compass, Sliders, Zap,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ContextOption {
   text: string;
@@ -1770,11 +1772,23 @@ export default function TrainingWorkspace({
   const [activeAnalogyTab, setActiveAnalogyTab] = useState<'ctx1' | 'ctx2' | 'ctx3' | 'ctx4'>('ctx1');
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [carouselIndex, setCarouselIndex] = useState<number>(0);
+  const [innerCarouselEnabled, setInnerCarouselEnabled] = useState<boolean>(true);
+  const [innerPremiseIndex, setInnerPremiseIndex] = useState<number>(0);
+  const [innerModifierIndex, setInnerModifierIndex] = useState<number>(0);
+  const [innerStage3Index, setInnerStage3Index] = useState<number>(0);
   const [seconds, setSeconds] = useState<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    setInnerPremiseIndex(0);
+    setInnerModifierIndex(0);
+    setInnerStage3Index(0);
+  }, [carouselIndex, workoutMode, currentPuzzle, currentCtxPuzzle, currentAnalogyPuzzle]);
+
   const handleStartTraining = () => {
     setIsPlaying(true);
+    setCarouselIndex(0);
     setDimension(selectedDim);
     setShowCtxExplanation(false);
     setShowAnalogyExplanation(false);
@@ -2717,697 +2731,1217 @@ export default function TrainingWorkspace({
             Initialize Relational Matrix
           </button>
         </div>
-      ) : workoutMode === 'classic' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          
-          {/* Left panel - Premise list */}
-          <div className="lg:col-span-7 flex flex-col gap-4 bg-theme-card border border-theme-comp p-6 shadow-sm relative overflow-hidden">
-            <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(var(--main-color-complementary) 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
-            
-            <div className="flex justify-between items-center border-b border-theme-comp/30 pb-3 mb-2 z-10">
-              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-theme-text">
-                <ShieldCheck className="w-3.5 h-3.5 text-theme-comp" />
-                <span>Riddle Engine ({currentPuzzle?.difficulty})</span>
-              </div>
-              <div className="flex items-center gap-1 bg-theme-bg border border-theme-comp/30 py-1 px-2.5">
-                <Clock className="w-3.5 h-3.5 text-theme-comp" />
-                <span className="font-mono text-xs font-bold text-theme-text">{formatTime(seconds)}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 z-10">
-              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Premises Declarations:</p>
-              <div className="flex flex-col gap-1.5">
-                {currentPuzzle?.premises.map((p, idx) => {
-                  const puzzleBasis = currentPuzzle ? getBasisRelations(currentPuzzle.dimension) : {};
-                  const relVector = puzzleBasis[p.relation] || [];
-                  return (
-                    <div
-                      key={idx}
-                      onMouseEnter={() => setHighlightedPremiseId(`pzp-${idx}`)}
-                      onMouseLeave={() => setHighlightedPremiseId(null)}
-                      className="flex flex-wrap items-center justify-between bg-theme-bg border border-theme-comp/40 hover:border-theme-comp px-4 py-2 text-xs font-sans transition-all duration-150 cursor-help"
-                    >
-                      <span className="flex items-center gap-2 flex-wrap text-theme-text">
-                        <span className="w-1.5 h-1.5 bg-theme-comp rotate-45"></span>
-                        <strong className="text-theme-text font-mono">{p.entityA}</strong>
-                        <span className="text-theme-text/80 font-serif italic">is</span>
-                        <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{p.relation}</span>
-                        <span className="text-theme-text/80 font-serif italic">of</span>
-                        <strong className="text-theme-text font-mono">{p.entityB}</strong>
-                      </span>
-                      <span className="text-[9px] font-mono text-theme-text/50 bg-theme-bg px-2 py-0.5 border border-dashed border-theme-comp/20 mt-1 sm:mt-0 font-bold">Premise #{idx + 1}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="bg-theme-bg border border-theme-comp p-4 my-2 z-10">
-              <div className="flex gap-2.5 items-start">
-                <HelpCircle className="w-5 h-5 shrink-0 mt-0.5 text-theme-comp" />
-                <div className="flex flex-col">
-                  <p className="text-xs font-mono font-bold text-theme-text uppercase tracking-wide">Deduce Vector Displacement</p>
-                  <p className="text-sm font-sans font-bold text-theme-text leading-relaxed mt-1">
-                    Determine the coordinates position of <strong className="font-mono px-1 ml-1" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{currentPuzzle?.question.entityA}</strong> with respect to <strong className="font-mono border border-theme-comp/40 px-1 ml-1 bg-theme-card">{currentPuzzle?.question.entityB}</strong>.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-          </div>
- 
-          {/* Multiple Choice Answers column */}
-          <div className="lg:col-span-5 flex flex-col gap-4">
-            <div className="bg-theme-card border border-theme-comp p-5 shadow-sm flex flex-col flex-1">
-              <span className="text-xs font-mono text-theme-text font-bold uppercase tracking-wider mb-3">SELECT RESPONSE CARD</span>
-              
-              <div className="flex flex-col gap-2.5 flex-1 justify-center">
-                {currentPuzzle?.options.map((opt, idx) => {
-                  const isSelected = selectedAnswerIdx === idx;
-                  let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
-                  
-                  if (isSelected) {
-                    cardStyle = "border-2 border-theme-comp bg-theme-comp text-theme-bg font-bold";
-                  }
-
-                  if (isSubmitted) {
-                    if (opt.isCorrect) {
-                      cardStyle = "border-2 border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
-                    } else if (isSelected) {
-                      cardStyle = "border-2 border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
-                    } else {
-                      cardStyle = "border-theme-comp/20 bg-theme-bg/20 opacity-40 cursor-not-allowed";
-                    }
-                  }
-
-                  return (
-                    <button
-                      key={idx}
-                      id={`mc-option-${idx}`}
-                      onClick={() => handleSelectAnswer(idx)}
-                      disabled={isSubmitted}
-                      className={`w-full text-left p-3.5 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none ${cardStyle}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-5 h-5 border text-[10px] font-mono flex items-center justify-center font-bold rounded-none ${
-                          isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
-                        }`}>
-                          {String.fromCharCode(65 + idx)}
-                        </span>
-                        <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.relation}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-theme-comp">
-                {!isSubmitted ? (
-                  <button
-                    id="submit-answer-btn"
-                    onClick={handleSubmitAnswer}
-                    disabled={selectedAnswerIdx === null}
-                    className="w-full bg-theme-comp hover:bg-theme-comp/90 disabled:opacity-30 disabled:cursor-not-allowed text-theme-bg text-xs font-mono font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 uppercase tracking-widest h-[44px]"
-                  >
-                    <span>Submit Relational Deductions</span>
-                    <ArrowRight className="w-4 h-4 ml-0.5" />
-                  </button>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="text-center py-1 text-xs font-sans font-bold uppercase tracking-wider">
-                      {currentPuzzle?.options[selectedAnswerIdx ?? 0]?.isCorrect ? (
-                        <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
-                          <Trophy className="w-4 h-4" /> SUCCESS • +{100 + Math.max(0, Math.floor((60 - seconds) * 1.5))} SCORE ACCUMULATED
-                        </span>
-                      ) : (
-                        <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
-                          DEDUCTION ENCOUNTERED COGNITIVE DIVERGENCE
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      id="next-puzzle-btn"
-                      onClick={handleNextPuzzle}
-                      className="w-full bg-theme-comp hover:bg-theme-comp/90 text-theme-bg text-xs font-sans font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wide h-[44px]"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                      <span>Request Next Vector Matrix</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : workoutMode === 'context' ? (
-        // PLAYGROUND: CONTEXT MUTATOR MODE (Relational Workout "Context")
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          
-          <div className="lg:col-span-7 flex flex-col gap-4 bg-theme-card border border-theme-comp p-6 shadow-sm relative overflow-hidden">
-            <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(var(--main-color-complementary) 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
-            
-            <div className="flex justify-between items-center border-b border-theme-comp/30 pb-3 mb-2 z-10 select-none">
-              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-theme-text">
-                <ShieldCheck className="w-3.5 h-3.5 text-theme-comp" />
-                <span>Context Multiplier Engine ({currentCtxPuzzle?.difficulty})</span>
-              </div>
-              <div className="flex items-center gap-1 bg-theme-bg border border-theme-comp/30 py-1 px-2.5">
-                <Clock className="w-3.5 h-3.5 text-theme-comp" />
-                <span className="font-mono text-xs font-bold text-theme-text">{formatTime(seconds)}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2.5 z-10 select-text">
-              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Anchor Definitions:</p>
-              <div className="flex flex-col gap-1.5 font-sans text-xs">
-                {currentCtxPuzzle?.nodeDefinitions.map((def, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/40 px-4 py-2">
-                    <span className="flex items-center gap-2 flex-wrap text-theme-text">
-                      <span className="w-2 h-2 border border-theme-comp rotate-45"></span>
-                      <strong className="text-theme-text font-mono">{def.node}</strong>
-                      <span className="opacity-80 font-serif italic">is initially positioned</span>
-                      <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
-                      <span className="opacity-80 font-serif italic">of</span>
-                      <strong className="text-theme-text font-mono">{def.targetNode}</strong>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 z-10 mt-1 select-text">
-              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Context Window Switches (Active Stack):</p>
-              <div className="flex flex-col gap-1.5 font-sans">
-                {currentCtxPuzzle?.contextVehicles.map((ctx, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/30 px-4 py-2 text-xs">
-                    <span className="flex items-center gap-2 flex-wrap font-mono font-bold text-theme-text">
-                      <Sliders className="w-3.5 h-3.5 text-theme-comp" />
-                      <span>{ctx.text}</span>
-                    </span>
-                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 border uppercase ${
-                      ctx.isAnchor
-                        ? 'bg-theme-bg border-theme-comp/30 text-theme-text'
-                        : ctx.shiftMultiplier < 0 
-                          ? 'bg-theme-comp/10 border-theme-comp/50 text-theme-accent' 
-                          : 'bg-theme-comp/20 border-theme-comp text-theme-accent'
-                    }`}>
-                      {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-theme-bg border border-theme-comp p-4 my-2 z-10 select-text font-sans">
-              <div className="flex gap-2.5 items-start">
-                <HelpCircle className="w-5 h-5 shrink-0 mt-0.5 text-theme-comp" />
-                <div className="flex flex-col flex-1">
-                  <p className="text-xs font-mono font-bold text-theme-text uppercase tracking-wide opacity-60">Hyperspatial Resolution Inquiry</p>
-                  <p className="text-theme-text font-bold leading-relaxed mt-1 text-sm md:text-base">
-                    What is <strong className="font-mono px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{currentCtxPuzzle?.queryNode}::{currentCtxPuzzle?.queryTarget}</strong> in context <strong className="font-mono border border-theme-comp px-1.5 py-0.5 bg-theme-card font-extrabold text-theme-accent">[{currentCtxPuzzle?.activeContextGroup.join('')}]</strong>?
-                  </p>
-                  
-                  <div className="mt-3.5 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-3 flex-wrap gap-2">
-                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
-                    <button
-                      onClick={() => setShowCtxExplanation(prev => !prev)}
-                      className="px-3 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-[11px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"
-                    >
-                      <Brain className="w-3.5 h-3.5" />
-                      {showCtxExplanation ? 'Hide Derivation' : 'Explain Process'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Explanation Display Block */}
-            {showCtxExplanation && currentCtxPuzzle && (
-              <div className="bg-theme-bg border border-theme-comp p-4 mb-3 text-xs font-mono z-10 select-text animate-fadeIn">
-                <div className="flex items-center gap-1.5 text-theme-text font-bold border-b border-theme-comp pb-2 mb-2.5 uppercase tracking-wide text-[10px]">
-                  <Activity className="w-4 h-4 text-theme-comp animate-pulse" />
-                  <span>Hyperspatial Logic Resolution Log</span>
-                </div>
-                <div className="space-y-3.5 text-theme-text leading-relaxed text-[11px]">
-                  <div>
-                    <span className="font-bold border-b border-theme-comp/30 pb-0.5">1. Baseline Coordinate Difference:</span> <br />
-                    - The initial spatial offset <strong className="font-bold">{currentCtxPuzzle.queryNode}::{currentCtxPuzzle.queryTarget}</strong> matches relation: <br />
-                    <code className="bg-theme-card px-2 py-0.5 font-bold border border-theme-comp/25 inline-block mt-1 font-mono">
-                      [{currentCtxPuzzle.baseOffsetVector.slice(0, selectedDim).join(', ')}] ({currentCtxPuzzle.baseRelation})
-                    </code>
-                  </div>
-                  
-                  <div>
-                    <span className="font-bold border-b border-theme-comp/30 pb-0.5">2. Compiling Modifiers Stack:</span> <br />
-                    {currentCtxPuzzle.contextVehicles.map((cv, id) => {
-                      const isActive = currentCtxPuzzle.activeContextGroup.includes(cv.id);
-                      const repVec = cv.representedVector || Array(selectedDim).fill(0);
-                      const relationName = describeContextVector(repVec, selectedDim);
-                      return (
-                        <span key={id} className="block pl-3 mt-1.5 border-l border-dashed border-theme-comp/30">
-                          • <strong className="text-[11px]">{cv.text}</strong> &rarr; <span className={isActive ? "font-bold select-all bg-theme-comp/10 border border-theme-comp text-theme-accent px-1" : "opacity-45"}>
-                            {isActive ? 'ACTIVE IN STACK' : 'BYPASSED'}
-                          </span>
-                          {isActive && (
-                            <span className="block text-[10px] pl-2 mt-0.5 text-theme-text/85">
-                              This applies {cv.isAnchor ? 'the anchor relation' : cv.shiftMultiplier < 0 ? 'an Inversion (-1 coeff)' : `a Scaling of x${cv.shiftMultiplier}`} resulting in representation: <br />
-                              <strong className="font-sans font-bold text-xs select-all text-theme-accent">
-                                {relationName} [{repVec.slice(0, selectedDim).join(', ')}]
-                              </strong>
-                            </span>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  
-                  <div className="border-t border-dashed border-theme-comp/20 pt-2.5">
-                    <span className="font-bold border-b border-theme-comp/30 pb-0.5 text-[10.5px]">3. Compounding Result:</span> <br />
-                    - Applying the active coordinate axis shifts to the base vector scales/inverts corresponding dimensions to yield the transformed vector: <br />
-                    <code className="px-2 py-1 inline-block mt-2 font-bold text-xs" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>
-                      [{currentCtxPuzzle.projectedVector.slice(0, selectedDim).join(', ')}] ({currentCtxPuzzle.projectedRelation})
-                    </code>
-                  </div>
-                </div>
-              </div>
-            )}
-
-
-          </div>
-
-          <div className="lg:col-span-5 flex flex-col gap-4">
-            <div className="bg-theme-card border border-theme-comp p-5 shadow-sm flex flex-col flex-1">
-              <span className="text-xs font-mono text-theme-text font-bold uppercase tracking-wider mb-3">SELECT RESPONSE CARD</span>
-              
-              <div className="flex flex-col gap-2.5 flex-1 justify-center select-none">
-                {currentCtxPuzzle?.options.map((opt, idx) => {
-                  const isSelected = selectedCtxAnswerIdx === idx;
-                  let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
-                  
-                  if (isSelected) {
-                    cardStyle = "border-2 border-theme-comp bg-theme-comp text-theme-bg font-bold";
-                  }
-
-                  if (isSubmitted) {
-                    if (opt.isCorrect) {
-                      cardStyle = "border-2 border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
-                    } else if (isSelected) {
-                      cardStyle = "border-2 border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
-                    } else {
-                      cardStyle = "border-theme-comp/20 bg-theme-bg/20 opacity-40 cursor-not-allowed";
-                    }
-                  }
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => handleSelectAnswer(idx)}
-                      disabled={isSubmitted}
-                      className={`w-full text-left p-3.5 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none ${cardStyle}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-5 h-5 border text-[10px] font-mono flex items-center justify-center font-bold rounded-none ${
-                          isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
-                        }`}>
-                          {String.fromCharCode(65 + idx)}
-                        </span>
-                        <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.text}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-theme-comp select-none">
-                {!isSubmitted ? (
-                  <button
-                    onClick={handleSubmitAnswer}
-                    disabled={selectedCtxAnswerIdx === null}
-                    className="w-full bg-theme-comp hover:bg-theme-comp/90 disabled:opacity-30 disabled:cursor-not-allowed text-theme-bg text-xs font-mono font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 uppercase tracking-widest h-[44px]"
-                  >
-                    <span>Submit Projections deductions</span>
-                    <ArrowRight className="w-4 h-4 ml-0.5" />
-                  </button>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="text-center py-1 text-xs font-sans font-bold uppercase tracking-wider">
-                      {currentCtxPuzzle?.options[selectedCtxAnswerIdx ?? 0]?.isCorrect ? (
-                        <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
-                          <Trophy className="w-4 h-4" /> SUCCESS • +{120 + Math.max(0, Math.floor((90 - seconds) * 1.5))} SCORE GAINED
-                        </span>
-                      ) : (
-                        <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
-                          PROJECTION DEVIAVATION DETECTED BY MATRIX
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleNextPuzzle}
-                      className="w-full bg-theme-comp hover:bg-theme-comp/90 text-theme-bg text-xs font-sans font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wide h-[44px]"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                      <span>Request Next Coordinate Domain</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
       ) : (
-        // PLAYGROUND: CROSS CONTEXT ANALOGY MODE
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch" id="analogy-playground-view">
-          
-          {/* Left Panel: Context Rules and Inquiry */}
-          <div className="lg:col-span-7 flex flex-col gap-4 bg-theme-card border border-theme-comp p-6 shadow-sm relative overflow-hidden">
-            <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'radial-gradient(var(--main-color-complementary) 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
-            
-            <div className="flex justify-between items-center border-b border-theme-comp/30 pb-3 mb-2 z-10 select-none">
-              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase font-bold text-theme-text">
-                <ShieldCheck className="w-3.5 h-3.5 text-theme-comp" />
-                <span>Cross-Context Analogy Engine ({currentAnalogyPuzzle?.difficulty})</span>
-              </div>
-              <div className="flex items-center gap-1 bg-theme-bg border border-theme-comp/30 py-1 px-2.5">
-                <Clock className="w-3.5 h-3.5 text-theme-comp" />
-                <span className="font-mono text-xs font-bold text-theme-text">{formatTime(seconds)}</span>
-              </div>
+        <div className="flex flex-col gap-4">
+          {/* Header Row */}
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-theme-comp/30 pb-4 mb-2 select-none gap-3">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono uppercase font-bold text-theme-accent tracking-widest">
+                {workoutMode === 'classic' ? 'Baseline Spatial Mapping' : workoutMode === 'context' ? 'Multi-Axis Mutator' : 'Cross-Context Matrix Alignment'}
+              </span>
+              <h3 className="font-serif italic text-lg text-theme-text font-bold uppercase tracking-wide mt-0.5">
+                {workoutMode === 'classic' 
+                  ? `Classic Riddle Engine` 
+                  : workoutMode === 'context' 
+                    ? `Context Multiplier Engine` 
+                    : `Cross-Context Analogy Engine`
+                }
+                <span className="text-xs font-sans font-normal normal-case not-italic ml-2 text-theme-text/65">
+                  ({workoutMode === 'classic' ? currentPuzzle?.difficulty : workoutMode === 'context' ? currentCtxPuzzle?.difficulty : currentAnalogyPuzzle?.difficulty})
+                </span>
+              </h3>
             </div>
-
-            {/* Visualizer selector tab */}
-            <div className="flex bg-theme-bg p-0.5 border border-theme-comp/20 z-10 select-none flex-wrap gap-0.5">
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              {/* Inner Carousel Mode Toggle */}
               <button
-                onClick={() => setActiveAnalogyTab('ctx1')}
-                className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
-                  activeAnalogyTab === 'ctx1'
-                    ? 'bg-theme-comp text-theme-bg'
-                    : 'text-theme-text hover:bg-theme-comp/10'
+                onClick={() => setInnerCarouselEnabled(prev => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] font-mono font-bold uppercase tracking-wider cursor-pointer transition-all duration-150 rounded-none shadow-sm h-[32px] ${
+                  innerCarouselEnabled 
+                    ? 'bg-theme-comp text-theme-bg border-theme-comp font-black' 
+                    : 'bg-theme-bg text-theme-text/80 border-theme-comp/30 hover:bg-theme-comp/10'
                 }`}
+                title="Toggle Step-by-Step Item Carousel View"
               >
-                <Sliders className="w-3 h-3" />
-                Context {currentAnalogyPuzzle?.context1} Space
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Carousel: {innerCarouselEnabled ? 'ON' : 'OFF'}</span>
               </button>
-              <button
-                onClick={() => setActiveAnalogyTab('ctx2')}
-                className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
-                  activeAnalogyTab === 'ctx2'
-                    ? 'bg-theme-comp text-theme-bg'
-                    : 'text-theme-text hover:bg-theme-comp/10'
-                }`}
-              >
-                <Sliders className="w-3 h-3" />
-                Context {currentAnalogyPuzzle?.context2} Space
-              </button>
-              {currentAnalogyPuzzle?.context3 && (
-                <button
-                  onClick={() => setActiveAnalogyTab('ctx3')}
-                  className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
-                    activeAnalogyTab === 'ctx3'
-                      ? 'bg-theme-comp text-theme-bg'
-                      : 'text-theme-text hover:bg-theme-comp/10'
-                  }`}
-                >
-                  <Sliders className="w-3 h-3" />
-                  Context {currentAnalogyPuzzle.context3} Space
-                </button>
-              )}
-              {currentAnalogyPuzzle?.context4 && (
-                <button
-                  onClick={() => setActiveAnalogyTab('ctx4')}
-                  className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
-                    activeAnalogyTab === 'ctx4'
-                      ? 'bg-theme-comp text-theme-bg'
-                      : 'text-theme-text hover:bg-theme-comp/10'
-                  }`}
-                >
-                  <Sliders className="w-3 h-3" />
-                  Context {currentAnalogyPuzzle.context4} Space
-                </button>
-              )}
-            </div>
 
-            <div className="flex flex-col gap-2.5 z-10 select-text">
-              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Base Node Positions:</p>
-              <div className="flex flex-col gap-1.5 font-sans text-xs">
-                {currentAnalogyPuzzle?.nodeDefinitions.map((def, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/40 px-3 py-1.5">
-                    <span className="flex items-center gap-2 flex-wrap text-theme-text font-medium">
-                      <span className="w-1.5 h-1.5 border border-theme-comp rotate-45"></span>
-                      <strong className="text-theme-text font-mono">{def.node}</strong>
-                      <span className="opacity-80 font-serif italic">is</span>
-                      <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
-                      <span className="opacity-80 font-serif italic">of</span>
-                      <strong className="text-theme-text font-mono">{def.targetNode}</strong>
-                    </span>
-                  </div>
-                ))}
+              <div className="flex items-center gap-2 bg-theme-bg border border-theme-comp/30 py-1.5 px-3 shadow-sm h-[32px]">
+                <Clock className="w-4 h-4 text-theme-comp animate-pulse" />
+                <span className="font-mono text-sm font-bold text-theme-text">{formatTime(seconds)}</span>
               </div>
             </div>
-
-            <div className="flex flex-col gap-2 z-10 mt-1 select-text">
-              <p className="text-xs font-mono text-theme-text font-bold uppercase tracking-wide">Context Definitions:</p>
-              <div className="flex flex-col gap-1.5 font-sans">
-                {currentAnalogyPuzzle?.contextVehicles.map((ctx, idx) => {
-                  const isC1 = ctx.id === currentAnalogyPuzzle?.context1;
-                  const isC2 = ctx.id === currentAnalogyPuzzle?.context2;
-                  const isC3 = !!currentAnalogyPuzzle?.context3 && ctx.id === currentAnalogyPuzzle.context3;
-                  const isC4 = !!currentAnalogyPuzzle?.context4 && ctx.id === currentAnalogyPuzzle.context4;
-                  const highlight = isC1 || isC2 || isC3 || isC4;
-                  return (
-                    <div key={idx} className={`flex items-center justify-between bg-theme-bg border px-4 py-2 text-xs ${highlight ? 'border-theme-comp font-bold' : 'border-theme-comp/20 opacity-60'}`}>
-                      <span className="flex items-center gap-2 flex-wrap font-mono text-theme-text">
-                        <Sliders className="w-3.5 h-3.5 text-theme-comp" />
-                        <span>{ctx.text}</span>
-                      </span>
-                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 border uppercase ${
-                        ctx.isAnchor ? 'bg-theme-bg border-theme-comp/30 text-theme-text' : 'bg-theme-comp/15 text-theme-accent'
-                      }`}>
-                        {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Analogy inquiry formulation */}
-            <div className="bg-theme-bg border border-theme-comp p-5 my-2 z-10 select-text font-sans">
-              <div className="flex gap-3 items-start">
-                <HelpCircle className="w-6 h-6 shrink-0 mt-0.5 text-theme-comp animate-pulse" />
-                <div className="flex flex-col flex-1">
-                  <p className="text-xs font-mono font-bold text-theme-text uppercase tracking-wide opacity-65">Cognitive Analogy Statement</p>
-                  
-                  {currentAnalogyPuzzle?.analogyStructureType === 'nested' ? (
-                    // NESTED DOUBLE ANALOGY (Cross-Cross)
-                    <div className="flex flex-col gap-2 mt-3 p-4 bg-theme-card border border-theme-comp/40">
-                      
-                      <div className="text-center font-mono text-[9px] uppercase tracking-wider text-theme-text/40 mb-1">- Left Meta Relation -</div>
-                      <div className="flex flex-col gap-1 border border-theme-comp/10 p-2.5 bg-theme-bg/30">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1}</span>
-                          <span className="text-xs font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeA} : {currentAnalogyPuzzle.nodeB}</span>
-                        </div>
-                        <div className="text-center italic font-serif text-[10px] opacity-50">::</div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2}</span>
-                          <span className="text-xs font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeC} : {currentAnalogyPuzzle.nodeD}</span>
-                        </div>
-                      </div>
-
-                      <div className="text-center italic font-serif text-sm py-2 text-theme-accent font-extrabold select-none">is meta-analogous to</div>
-
-                      <div className="text-center font-mono text-[9px] uppercase tracking-wider text-theme-text/40 mb-1">- Right Meta Relation -</div>
-                      <div className="flex flex-col gap-1 border border-theme-comp/10 p-2.5 bg-theme-bg/30">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context3}</span>
-                          <span className="text-xs font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeE} : {currentAnalogyPuzzle.nodeF}</span>
-                        </div>
-                        <div className="text-center italic font-serif text-[10px] opacity-50">::</div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context4}</span>
-                          <span className="text-xs font-mono font-bold text-theme-text">
-                            {currentAnalogyPuzzle.nodeG} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeH}</span>
-                          </span>
-                        </div>
-                      </div>
-
-                    </div>
-                  ) : currentAnalogyPuzzle?.analogyChainLength === 3 ? (
-                    // 3-WAY CHAIN COMPARISON
-                    <div className="flex flex-col gap-2 mt-3 p-4 bg-theme-card border border-theme-comp/40">
-                      
-                      <div className="flex items-center justify-between border-b border-theme-comp/10 pb-2">
-                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1} (Term 1)</span>
-                        <span className="text-xs font-mono font-bold text-theme-text">
-                          <span className="text-theme-accent font-extrabold">{currentAnalogyPuzzle.nodeA}</span> : {currentAnalogyPuzzle.nodeB}
-                        </span>
-                      </div>
-                      
-                      <div className="text-center italic font-serif text-sm py-1 opacity-70">::</div>
-                      
-                      <div className="flex items-center justify-between py-2 bg-theme-bg/20 border-y border-theme-comp/5">
-                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2} (Term 2)</span>
-                        <span className="text-xs font-mono font-bold text-theme-text">
-                          {currentAnalogyPuzzle.nodeC} : {currentAnalogyPuzzle.nodeD}
-                        </span>
-                      </div>
-
-                      <div className="text-center italic font-serif text-sm py-1 opacity-70">::</div>
-
-                      <div className="flex items-center justify-between border-t border-theme-comp/10 pt-2">
-                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context3} (Term 3)</span>
-                        <span className="text-xs font-mono font-bold text-theme-text flex items-center gap-1">
-                          {currentAnalogyPuzzle.nodeE} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeF}</span>
-                        </span>
-                      </div>
-
-                    </div>
-                  ) : (
-                    // CLASSIC STANDARD & COMPOUND 2-WAY
-                    <div className="flex flex-col gap-2 mt-3 p-4 bg-theme-card border border-theme-comp/40">
-                      <div className="flex items-center justify-between border-b border-theme-comp/10 pb-2">
-                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle?.context1} (Term 1)</span>
-                        <span className="text-xs font-mono font-bold text-theme-text">
-                          <span className="text-theme-accent font-extrabold">{currentAnalogyPuzzle?.nodeA}</span> : {currentAnalogyPuzzle?.nodeB}
-                        </span>
-                      </div>
-                      
-                      <div className="text-center italic font-serif text-sm py-1 opacity-70">is analogous to</div>
-                      
-                      <div className="flex items-center justify-between border-t border-theme-comp/10 pt-2">
-                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle?.context2} (Term 2)</span>
-                        <span className="text-xs font-mono font-bold text-theme-text">
-                          {currentAnalogyPuzzle?.nodeC} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle?.nodeD}</span>
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <p className="text-theme-text text-xs leading-relaxed mt-4">
-                    {currentAnalogyPuzzle?.analogyStructureType === 'nested'
-                      ? `Determine if the relationship difference (Left Meta Offset) between Context ${currentAnalogyPuzzle.context1} and ${currentAnalogyPuzzle.context2} aligns perfectly with the difference (Right Meta Offset) between Context ${currentAnalogyPuzzle.context3} and ${currentAnalogyPuzzle.context4}.`
-                      : currentAnalogyPuzzle?.analogyChainLength === 3
-                        ? `Evaluate whether the spatial relationships across all 3 Terms after applying their respective context modifiers are completely congruent.`
-                        : `Evaluate whether the spatial relationship in Term 1 (under Context ${currentAnalogyPuzzle?.context1}) matches exactly with the relationship in Term 2 (under Context ${currentAnalogyPuzzle?.context2}) after respective shift products are applied.`
-                    }
-                  </p>
-                  
-                  <div className="mt-3.5 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-3 flex-wrap gap-2">
-                    <span className="text-[10px] sm:text-[11px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
-                    <button
-                      onClick={() => setShowAnalogyExplanation(prev => !prev)}
-                      className="px-3 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-[11px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"
-                    >
-                      <Brain className="w-3.5 h-3.5" />
-                      {showAnalogyExplanation ? 'Hide Derivation' : 'Explain Process'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Explanation Display Block */}
-            {showAnalogyExplanation && currentAnalogyPuzzle && (
-              <div className="bg-theme-bg border border-theme-comp p-4 mb-3 text-xs font-mono z-10 select-text animate-fadeIn">
-                <div className="flex items-center gap-1.5 text-theme-text font-bold border-b border-theme-comp pb-2 mb-2.5 uppercase tracking-wide text-[10px]">
-                  <Activity className="w-4 h-4 text-theme-comp animate-pulse" />
-                  <span>Analogy Logic Resolution Log</span>
-                </div>
-                <div className="space-y-3.5 text-theme-text leading-relaxed text-[11px] md-content">
-                  {currentAnalogyPuzzle.explanation.split('\n\n').map((paragraph, pIdx) => (
-                    <p key={pIdx} dangerouslySetInnerHTML={{ 
-                      __html: paragraph
-                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/\$(.*?)\$/g, '<code class="bg-theme-card border border-theme-comp/20 px-1 font-mono">$1</code>')
-                    }} />
-                  ))}
-                </div>
-              </div>
-            )}
-
           </div>
 
-          {/* Right Panel: Multiple Choice Answer Cards */}
-          <div className="lg:col-span-5 flex flex-col gap-4" id="analogy-options-view">
-            <div className="bg-theme-card border border-theme-comp p-5 shadow-sm flex flex-col flex-1">
-              <span className="text-xs font-mono text-theme-text font-bold uppercase tracking-wider mb-3">SELECT TRUTH VALUE</span>
-              
-              <div className="flex flex-col gap-2.5 flex-1 justify-center select-none">
-                {currentAnalogyPuzzle?.options.map((opt, idx) => {
-                  const isSelected = selectedAnalogyAnswerIdx === idx;
-                  let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
-                  
-                  if (isSelected) {
-                    cardStyle = "border-2 border-theme-comp bg-theme-comp text-theme-bg font-bold";
-                  }
+          {/* Stepper Timeline Navigation Row */}
+          <div className="grid grid-cols-3 gap-2 mb-2 select-none">
+            <button
+              onClick={() => setCarouselIndex(0)}
+              className={`py-2.5 px-3 border text-[10px] sm:text-xs font-mono uppercase tracking-wider font-bold transition-all duration-150 rounded-none cursor-pointer text-center ${
+                carouselIndex === 0
+                  ? 'bg-theme-comp text-theme-bg border-theme-comp font-black'
+                  : 'bg-theme-bg text-theme-text/80 border-theme-comp/20 hover:bg-theme-comp/10'
+              }`}
+            >
+              <span className="hidden sm:inline">01. </span>Anchor Network
+            </button>
+            <button
+              onClick={() => setCarouselIndex(1)}
+              className={`py-2.5 px-3 border text-[10px] sm:text-xs font-mono uppercase tracking-wider font-bold transition-all duration-150 rounded-none cursor-pointer text-center ${
+                carouselIndex === 1
+                  ? 'bg-theme-comp text-theme-bg border-theme-comp font-black'
+                  : 'bg-theme-bg text-theme-text/80 border-theme-comp/20 hover:bg-theme-comp/10'
+              }`}
+            >
+              <span className="hidden sm:inline">02. </span>
+              {workoutMode === 'classic' ? 'Baseline Matrix' : 'Context Shifts'}
+            </button>
+            <button
+              onClick={() => setCarouselIndex(2)}
+              className={`py-2.5 px-3 border text-[10px] sm:text-xs font-mono uppercase tracking-wider font-bold transition-all duration-150 rounded-none cursor-pointer text-center ${
+                carouselIndex === 2
+                  ? 'bg-theme-comp text-theme-bg border-theme-comp font-black'
+                  : 'bg-theme-bg text-theme-text/80 border-theme-comp/20 hover:bg-theme-comp/10'
+              }`}
+            >
+              <span className="hidden sm:inline">03. </span>Resolve & Submit
+            </button>
+          </div>
 
-                  if (isSubmitted) {
-                    if (opt.isCorrect) {
-                      cardStyle = "border-2 border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
-                    } else if (isSelected) {
-                      cardStyle = "border-2 border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
-                    } else {
-                      cardStyle = "border-theme-comp/20 bg-theme-bg/20 opacity-40 cursor-not-allowed";
-                    }
-                  }
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => handleSelectAnswer(idx)}
-                      disabled={isSubmitted}
-                      className={`w-full text-left p-3.5 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none ${cardStyle}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-5 h-5 border text-[10px] font-mono flex items-center justify-center font-bold rounded-none ${
-                          isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
-                        }`}>
-                          {String.fromCharCode(65 + idx)}
-                        </span>
-                        <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.text}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-theme-comp select-none">
-                {!isSubmitted ? (
-                  <button
-                    onClick={handleSubmitAnswer}
-                    disabled={selectedAnalogyAnswerIdx === null}
-                    className="w-full bg-theme-comp hover:bg-theme-comp/90 disabled:opacity-30 disabled:cursor-not-allowed text-theme-bg text-xs font-mono font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 uppercase tracking-widest h-[44px]"
-                  >
-                    <span>Submit Analogy Resolution</span>
-                    <ArrowRight className="w-4 h-4 ml-0.5" />
-                  </button>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="text-center py-1 text-xs font-sans font-bold uppercase tracking-wider">
-                      {currentAnalogyPuzzle?.options[selectedAnalogyAnswerIdx ?? 0]?.isCorrect ? (
-                        <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
-                          <Trophy className="w-4 h-4" /> SUCCESS • +{150 + Math.max(0, Math.floor((120 - seconds) * 1.5))} SCORE GAINED
-                        </span>
-                      ) : (
-                        <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
-                          ANALOGOUS RESOLUTION MISALIGNED
-                        </span>
-                      )}
+          {/* Carousel Window Container */}
+          <div className="bg-theme-card border border-theme-comp p-6 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[500px]">
+            {/* Grid background effect */}
+            <div className="absolute inset-0 opacity-[0.015] pointer-events-none" style={{ backgroundImage: 'radial-gradient(var(--main-color-complementary) 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+            
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={carouselIndex}
+                initial={{ opacity: 0, x: 15 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -15 }}
+                transition={{ duration: 0.15 }}
+                className="flex-1 flex flex-col gap-4 z-10"
+              >
+                {/* Step 1: Anchor Definitions or Premises */}
+                {carouselIndex === 0 && (
+                  <div className="flex-1 flex flex-col gap-3">
+                    <div className="border-b border-theme-comp/20 pb-2">
+                      <h4 className="font-mono text-xs font-bold uppercase text-theme-accent tracking-wide">
+                        {workoutMode === 'classic' ? 'Premises Declarations' : workoutMode === 'context' ? 'Initial Anchor Definitions' : 'Base Coordinate Positions'}
+                      </h4>
+                      <p className="text-[10px] text-theme-text/60 font-sans mt-0.5">
+                        {workoutMode === 'classic' 
+                          ? 'Evaluate baseline relative dimensions and displacement offsets between the registered benchmarks.'
+                          : workoutMode === 'context'
+                            ? 'Observe baseline coordinate relations before active hyperspatial context multipliers are evaluated.'
+                            : 'Inspect node relations across parallel context systems using the context selection array.'
+                        }
+                      </p>
                     </div>
-                    <button
-                      onClick={handleNextPuzzle}
-                      className="w-full bg-theme-comp hover:bg-theme-comp/90 text-theme-bg text-xs font-sans font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wide h-[44px]"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                      <span>Request Next Analogy Matrix</span>
-                    </button>
+
+                    {workoutMode === 'classic' && (
+                      innerCarouselEnabled ? (
+                        <div className="flex flex-col gap-4">
+                          {(() => {
+                            const p = currentPuzzle?.premises[innerPremiseIndex];
+                            if (!p) return <div className="text-xs text-theme-text/50 font-mono italic">No premises available</div>;
+                            return (
+                              <div
+                                onMouseEnter={() => setHighlightedPremiseId(`pzp-${innerPremiseIndex}`)}
+                                onMouseLeave={() => setHighlightedPremiseId(null)}
+                                className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-theme-bg border border-theme-comp px-5 py-4 transition-all duration-150 shadow-sm relative min-h-[70px]"
+                              >
+                                <span className="flex items-center gap-2 flex-wrap text-theme-text text-sm sm:text-base">
+                                  <span className="w-2 h-2 bg-theme-comp rotate-45"></span>
+                                  <strong className="text-theme-text font-mono font-black">{p.entityA}</strong>
+                                  <span className="text-theme-text/80 font-serif italic text-xs sm:text-sm">is</span>
+                                  <span className="font-mono font-bold px-2 py-0.5 text-xs sm:text-sm" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{p.relation}</span>
+                                  <span className="text-theme-text/80 font-serif italic text-xs sm:text-sm">of</span>
+                                  <strong className="text-theme-text font-mono font-black">{p.entityB}</strong>
+                                </span>
+                                <span className="text-[10px] font-mono text-theme-text/70 bg-theme-comp/10 px-2 py-0.5 border border-theme-comp/30 font-bold mt-2 sm:mt-0">Premise #{innerPremiseIndex + 1}</span>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Carousel Navigation */}
+                          <div className="flex items-center justify-between pt-2 border-t border-theme-comp/10 select-none">
+                            <button
+                              onClick={() => setInnerPremiseIndex(prev => {
+                                const len = currentPuzzle?.premises.length || 1;
+                                return (prev - 1 + len) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5 text-theme-comp" />
+                              <span>Prev</span>
+                            </button>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-mono font-bold text-theme-text/80">
+                                Premise {innerPremiseIndex + 1} of {currentPuzzle?.premises.length || 0}
+                              </span>
+                              <div className="flex gap-1.5">
+                                {currentPuzzle?.premises.map((_, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => setInnerPremiseIndex(idx)}
+                                    className={`w-1.5 h-1.5 rounded-full cursor-pointer transition-all duration-150 ${
+                                      innerPremiseIndex === idx ? 'bg-theme-comp scale-125' : 'bg-theme-comp/20 hover:bg-theme-comp/40'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setInnerPremiseIndex(prev => {
+                                const len = currentPuzzle?.premises.length || 1;
+                                return (prev + 1) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <span>Next</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-theme-comp" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 font-sans select-text mt-1 max-h-[300px] overflow-y-auto">
+                          {currentPuzzle?.premises.map((p, idx) => (
+                            <div
+                              key={idx}
+                              onMouseEnter={() => setHighlightedPremiseId(`pzp-${idx}`)}
+                              onMouseLeave={() => setHighlightedPremiseId(null)}
+                              className="flex flex-wrap items-center justify-between bg-theme-bg border border-theme-comp/30 hover:border-theme-comp/80 px-4 py-2.5 text-xs transition-all duration-150 cursor-help"
+                            >
+                              <span className="flex items-center gap-2 flex-wrap text-theme-text">
+                                <span className="w-1.5 h-1.5 bg-theme-comp rotate-45"></span>
+                                <strong className="text-theme-text font-mono">{p.entityA}</strong>
+                                <span className="text-theme-text/80 font-serif italic">is</span>
+                                <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{p.relation}</span>
+                                <span className="text-theme-text/80 font-serif italic">of</span>
+                                <strong className="text-theme-text font-mono">{p.entityB}</strong>
+                              </span>
+                              <span className="text-[9px] font-mono text-theme-text/50 bg-theme-bg px-2 py-0.5 border border-dashed border-theme-comp/20 mt-1 sm:mt-0 font-bold">Premise #{idx + 1}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+
+                    {workoutMode === 'context' && (
+                      innerCarouselEnabled ? (
+                        <div className="flex flex-col gap-4">
+                          {(() => {
+                            const def = currentCtxPuzzle?.nodeDefinitions[innerPremiseIndex];
+                            if (!def) return <div className="text-xs text-theme-text/50 font-mono italic">No definitions available</div>;
+                            return (
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-theme-bg border border-theme-comp px-5 py-4 transition-all duration-150 shadow-sm relative min-h-[70px]">
+                                <span className="flex items-center gap-2 flex-wrap text-theme-text text-sm sm:text-base">
+                                  <span className="w-2 h-2 border border-theme-comp rotate-45"></span>
+                                  <strong className="text-theme-text font-mono font-black">{def.node}</strong>
+                                  <span className="opacity-80 font-serif italic text-xs sm:text-sm">is initially positioned</span>
+                                  <span className="font-mono font-bold px-2 py-0.5 text-xs sm:text-sm" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
+                                  <span className="opacity-80 font-serif italic text-xs sm:text-sm">of</span>
+                                  <strong className="text-theme-text font-mono font-black">{def.targetNode}</strong>
+                                </span>
+                                <span className="text-[10px] font-mono text-theme-text/70 bg-theme-comp/10 px-2 py-0.5 border border-theme-comp/30 font-bold mt-2 sm:mt-0">Mapping #{innerPremiseIndex + 1}</span>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Carousel Navigation */}
+                          <div className="flex items-center justify-between pt-2 border-t border-theme-comp/10 select-none">
+                            <button
+                              onClick={() => setInnerPremiseIndex(prev => {
+                                const len = currentCtxPuzzle?.nodeDefinitions.length || 1;
+                                return (prev - 1 + len) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5 text-theme-comp" />
+                              <span>Prev</span>
+                            </button>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-mono font-bold text-theme-text/80">
+                                Definition {innerPremiseIndex + 1} of {currentCtxPuzzle?.nodeDefinitions.length || 0}
+                              </span>
+                              <div className="flex gap-1.5">
+                                {currentCtxPuzzle?.nodeDefinitions.map((_, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => setInnerPremiseIndex(idx)}
+                                    className={`w-1.5 h-1.5 rounded-full cursor-pointer transition-all duration-150 ${
+                                      innerPremiseIndex === idx ? 'bg-theme-comp scale-125' : 'bg-theme-comp/20 hover:bg-theme-comp/40'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setInnerPremiseIndex(prev => {
+                                const len = currentCtxPuzzle?.nodeDefinitions.length || 1;
+                                return (prev + 1) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <span>Next</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-theme-comp" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 font-sans text-xs mt-1 max-h-[300px] overflow-y-auto">
+                          {currentCtxPuzzle?.nodeDefinitions.map((def, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/30 px-4 py-2.5">
+                              <span className="flex items-center gap-2 flex-wrap text-theme-text">
+                                <span className="w-2 h-2 border border-theme-comp rotate-45"></span>
+                                <strong className="text-theme-text font-mono">{def.node}</strong>
+                                <span className="opacity-80 font-serif italic">is initially positioned</span>
+                                <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
+                                <span className="opacity-80 font-serif italic">of</span>
+                                <strong className="text-theme-text font-mono">{def.targetNode}</strong>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+
+                    {workoutMode === 'analogy' && (
+                      <div className="flex flex-col gap-3 mt-1">
+                        <div className="flex bg-theme-bg p-0.5 border border-theme-comp/20 z-10 select-none flex-wrap gap-0.5">
+                          <button
+                            onClick={() => setActiveAnalogyTab('ctx1')}
+                            className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                              activeAnalogyTab === 'ctx1'
+                                ? 'bg-theme-comp text-theme-bg'
+                                : 'text-theme-text hover:bg-theme-comp/10'
+                            }`}
+                          >
+                            <Sliders className="w-3 h-3" />
+                            Context {currentAnalogyPuzzle?.context1} Space
+                          </button>
+                          <button
+                            onClick={() => setActiveAnalogyTab('ctx2')}
+                            className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                              activeAnalogyTab === 'ctx2'
+                                ? 'bg-theme-comp text-theme-bg'
+                                : 'text-theme-text hover:bg-theme-comp/10'
+                            }`}
+                          >
+                            <Sliders className="w-3 h-3" />
+                            Context {currentAnalogyPuzzle?.context2} Space
+                          </button>
+                          {currentAnalogyPuzzle?.context3 && (
+                            <button
+                              onClick={() => setActiveAnalogyTab('ctx3')}
+                              className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                                activeAnalogyTab === 'ctx3'
+                                  ? 'bg-theme-comp text-theme-bg'
+                                  : 'text-theme-text hover:bg-theme-comp/10'
+                              }`}
+                            >
+                              <Sliders className="w-3 h-3" />
+                              Context {currentAnalogyPuzzle.context3} Space
+                            </button>
+                          )}
+                          {currentAnalogyPuzzle?.context4 && (
+                            <button
+                              onClick={() => setActiveAnalogyTab('ctx4')}
+                              className={`flex-1 min-w-[120px] py-1 text-[10px] font-mono font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide cursor-pointer transition-all duration-150 ${
+                                activeAnalogyTab === 'ctx4'
+                                  ? 'bg-theme-comp text-theme-bg'
+                                  : 'text-theme-text hover:bg-theme-comp/10'
+                              }`}
+                            >
+                              <Sliders className="w-3 h-3" />
+                              Context {currentAnalogyPuzzle.context4} Space
+                            </button>
+                          )}
+                        </div>
+
+                        {innerCarouselEnabled ? (
+                          <div className="flex flex-col gap-4">
+                            {(() => {
+                              const def = currentAnalogyPuzzle?.nodeDefinitions[innerPremiseIndex];
+                              if (!def) return <div className="text-xs text-theme-text/50 font-mono italic">No definitions available</div>;
+                              return (
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-theme-bg border border-theme-comp px-5 py-4 transition-all duration-150 shadow-sm relative min-h-[70px]">
+                                  <span className="flex items-center gap-2 flex-wrap text-theme-text text-sm sm:text-base">
+                                    <span className="w-1.5 h-1.5 border border-theme-comp rotate-45"></span>
+                                    <strong className="text-theme-text font-mono font-black">{def.node}</strong>
+                                    <span className="opacity-80 font-serif italic text-xs sm:text-sm">is</span>
+                                    <span className="font-mono font-bold px-2 py-0.5 text-xs sm:text-sm" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
+                                    <span className="opacity-80 font-serif italic text-xs sm:text-sm">of</span>
+                                    <strong className="text-theme-text font-mono font-black">{def.targetNode}</strong>
+                                  </span>
+                                  <span className="text-[10px] font-mono text-theme-text/70 bg-theme-comp/10 px-2 py-0.5 border border-theme-comp/30 font-bold mt-2 sm:mt-0">Mapping #{innerPremiseIndex + 1}</span>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Carousel Navigation */}
+                            <div className="flex items-center justify-between pt-2 border-t border-theme-comp/10 select-none">
+                              <button
+                                onClick={() => setInnerPremiseIndex(prev => {
+                                  const len = currentAnalogyPuzzle?.nodeDefinitions.length || 1;
+                                  return (prev - 1 + len) % len;
+                                })}
+                                className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                              >
+                                <ChevronLeft className="w-3.5 h-3.5 text-theme-comp" />
+                                <span>Prev</span>
+                              </button>
+
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-mono font-bold text-theme-text/80">
+                                  Definition {innerPremiseIndex + 1} of {currentAnalogyPuzzle?.nodeDefinitions.length || 0}
+                                </span>
+                                <div className="flex gap-1.5">
+                                  {currentAnalogyPuzzle?.nodeDefinitions.map((_, idx) => (
+                                    <button
+                                      key={idx}
+                                      onClick={() => setInnerPremiseIndex(idx)}
+                                      className={`w-1.5 h-1.5 rounded-full cursor-pointer transition-all duration-150 ${
+                                        innerPremiseIndex === idx ? 'bg-theme-comp scale-125' : 'bg-theme-comp/20 hover:bg-theme-comp/40'
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => setInnerPremiseIndex(prev => {
+                                  const len = currentAnalogyPuzzle?.nodeDefinitions.length || 1;
+                                  return (prev + 1) % len;
+                                })}
+                                className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                              >
+                                <span>Next</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-theme-comp" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1.5 font-sans text-xs max-h-[250px] overflow-y-auto">
+                            {currentAnalogyPuzzle?.nodeDefinitions.map((def, idx) => (
+                              <div key={idx} className="flex items-center justify-between bg-theme-bg border border-theme-comp/30 px-3 py-1.5">
+                                <span className="flex items-center gap-2 flex-wrap text-theme-text font-medium">
+                                  <span className="w-1.5 h-1.5 border border-theme-comp rotate-45"></span>
+                                  <strong className="text-theme-text font-mono">{def.node}</strong>
+                                  <span className="opacity-80 font-serif italic">is</span>
+                                  <span className="font-mono font-bold px-1.5 py-0.5" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{def.relation}</span>
+                                  <span className="opacity-80 font-serif italic">of</span>
+                                  <strong className="text-theme-text font-mono">{def.targetNode}</strong>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="bg-theme-bg border border-theme-comp/20 p-4 text-[11px] text-theme-text/80 leading-relaxed font-sans mt-auto">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <HelpCircle className="w-3.5 h-3.5 text-theme-comp" />
+                        <span className="font-mono font-bold uppercase tracking-wider text-[9px]">Workspace Helper</span>
+                      </div>
+                      {workoutMode === 'classic' 
+                        ? 'Trace the geometric relative positions from one entity to another across these rules. Once resolved, advance to Stage 2 or 3 to submit your deduction.'
+                        : 'Review these anchor mappings first. They set the initial points from which dimensions get rotated or scaled in the next stage.'
+                      }
+                    </div>
                   </div>
                 )}
+
+                {/* Step 2: Context Window Switches */}
+                {carouselIndex === 1 && (
+                  <div className="flex-1 flex flex-col gap-3">
+                    <div className="border-b border-theme-comp/20 pb-2">
+                      <h4 className="font-mono text-xs font-bold uppercase text-theme-accent tracking-wide">
+                        {workoutMode === 'classic' ? 'Standard Grid Coordinate Parameters' : 'Active Context Modifiers'}
+                      </h4>
+                      <p className="text-[10px] text-theme-text/60 font-sans mt-0.5">
+                        {workoutMode === 'classic'
+                          ? 'No active scaling or rotation shifts exist in the Classic deduction model.'
+                          : 'These context values represent actively compiled transformation vectors modifying the space dimensions.'
+                        }
+                      </p>
+                    </div>
+
+                    {workoutMode === 'classic' && (
+                      <div className="flex flex-col gap-4 mt-2">
+                        <div className="bg-theme-bg border border-theme-comp/35 p-5 font-mono text-xs text-theme-text space-y-3.5">
+                          <div className="flex items-center gap-2 text-theme-accent font-bold uppercase tracking-wide">
+                            <Compass className="w-4 h-4" />
+                            <span>Static Grid System Log</span>
+                          </div>
+                          <p className="font-sans leading-relaxed text-theme-text/90">
+                            Deductions are resolved under constant, symmetric Cartesian coordinate axes. Vector scaling multipliers are locked at absolute 1:1, meaning each unit represents a standard shift relation.
+                          </p>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-theme-comp/20">
+                            <div className="p-3 bg-theme-card border border-theme-comp/10">
+                              <div className="font-bold text-theme-accent uppercase tracking-wider text-[10px] mb-1">Session Dimensions</div>
+                              <div className="text-sm font-bold">{selectedDim}D Cartesian Plane</div>
+                            </div>
+                            <div className="p-3 bg-theme-card border border-theme-comp/10">
+                              <div className="font-bold text-theme-accent uppercase tracking-wider text-[10px] mb-1">Scaling Vector</div>
+                              <div className="text-xs">[1.0, 1.0{selectedDim > 2 ? ', 1.0' : ''}] Constant</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {workoutMode === 'context' && (
+                      innerCarouselEnabled ? (
+                        <div className="flex flex-col gap-4">
+                          {(() => {
+                            const ctx = currentCtxPuzzle?.contextVehicles[innerModifierIndex];
+                            if (!ctx) return <div className="text-xs text-theme-text/50 font-mono italic">No modifiers available</div>;
+                            const deps = getContextDependencies(ctx);
+                            return (
+                              <div className="flex flex-col gap-3 bg-theme-bg border border-theme-comp px-5 py-4 transition-all duration-150 shadow-sm relative min-h-[100px]">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="flex items-center gap-2 flex-wrap font-mono font-black text-theme-text text-sm">
+                                    <Sliders className="w-4 h-4 text-theme-comp" />
+                                    <span>{ctx.text}</span>
+                                  </span>
+                                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 border uppercase ${
+                                    ctx.isAnchor
+                                      ? 'bg-theme-bg border-theme-comp/30 text-theme-text'
+                                      : ctx.shiftMultiplier < 0 
+                                        ? 'bg-theme-comp/10 border-theme-comp/50 text-theme-accent' 
+                                        : 'bg-theme-comp/20 border-theme-comp text-theme-accent'
+                                  }`}>
+                                    {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                                  </span>
+                                </div>
+                                {deps.length > 0 && (
+                                  <div className="pl-6 font-mono text-[10px] text-theme-accent flex items-center gap-1.5 uppercase tracking-wider font-bold">
+                                    <span>Dependency Chain:</span>
+                                    <span className="flex items-center gap-1 flex-wrap">
+                                      {deps.map((d, dIdx) => (
+                                        <span key={dIdx} className="flex items-center gap-1">
+                                          {dIdx > 0 && <span className="opacity-40">&rarr;</span>}
+                                          <span className="bg-theme-comp/10 border border-theme-comp/20 px-1.5 py-0.5 rounded-sm text-theme-text font-black">{d}</span>
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Carousel Navigation */}
+                          <div className="flex items-center justify-between pt-2 border-t border-theme-comp/10 select-none">
+                            <button
+                              onClick={() => setInnerModifierIndex(prev => {
+                                const len = currentCtxPuzzle?.contextVehicles.length || 1;
+                                return (prev - 1 + len) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5 text-theme-comp" />
+                              <span>Prev</span>
+                            </button>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-mono font-bold text-theme-text/80">
+                                Modifier {innerModifierIndex + 1} of {currentCtxPuzzle?.contextVehicles.length || 0}
+                              </span>
+                              <div className="flex gap-1.5 flex-wrap justify-center">
+                                {currentCtxPuzzle?.contextVehicles.map((_, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => setInnerModifierIndex(idx)}
+                                    className={`w-1.5 h-1.5 rounded-full cursor-pointer transition-all duration-150 ${
+                                      innerModifierIndex === idx ? 'bg-theme-comp scale-125' : 'bg-theme-comp/20 hover:bg-theme-comp/40'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setInnerModifierIndex(prev => {
+                                const len = currentCtxPuzzle?.contextVehicles.length || 1;
+                                return (prev + 1) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <span>Next</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-theme-comp" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1.5 font-sans select-text max-h-[300px] overflow-y-auto mt-1">
+                          {currentCtxPuzzle?.contextVehicles.map((ctx, idx) => {
+                            const deps = getContextDependencies(ctx);
+                            return (
+                              <div key={idx} className="flex flex-col gap-1 bg-theme-bg border border-theme-comp/30 px-4 py-2.5">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="flex items-center gap-2 flex-wrap font-mono font-bold text-theme-text">
+                                    <Sliders className="w-3.5 h-3.5 text-theme-comp" />
+                                    <span>{ctx.text}</span>
+                                  </span>
+                                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 border uppercase ${
+                                    ctx.isAnchor
+                                      ? 'bg-theme-bg border-theme-comp/30 text-theme-text'
+                                      : ctx.shiftMultiplier < 0 
+                                        ? 'bg-theme-comp/10 border-theme-comp/50 text-theme-accent' 
+                                        : 'bg-theme-comp/20 border-theme-comp text-theme-accent'
+                                  }`}>
+                                    {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                                  </span>
+                                </div>
+                                {deps.length > 0 && (
+                                  <div className="pl-5.5 font-mono text-[9px] text-theme-accent flex items-center gap-1.5 uppercase tracking-wider font-bold">
+                                    <span>Dependency Chain:</span>
+                                    <span className="flex items-center gap-1">
+                                      {deps.map((d, dIdx) => (
+                                        <span key={dIdx} className="flex items-center gap-1">
+                                          {dIdx > 0 && <span className="opacity-40">&rarr;</span>}
+                                          <span className="bg-theme-comp/10 border border-theme-comp/20 px-1 py-0.2 rounded-sm text-theme-text font-black">{d}</span>
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )
+                    )}
+
+                    {workoutMode === 'analogy' && (
+                      innerCarouselEnabled ? (
+                        <div className="flex flex-col gap-4">
+                          {(() => {
+                            const ctx = currentAnalogyPuzzle?.contextVehicles[innerModifierIndex];
+                            if (!ctx) return <div className="text-xs text-theme-text/50 font-mono italic">No modifiers available</div>;
+                            const isC1 = ctx.id === currentAnalogyPuzzle?.context1;
+                            const isC2 = ctx.id === currentAnalogyPuzzle?.context2;
+                            const isC3 = !!currentAnalogyPuzzle?.context3 && ctx.id === currentAnalogyPuzzle.context3;
+                            const isC4 = !!currentAnalogyPuzzle?.context4 && ctx.id === currentAnalogyPuzzle.context4;
+                            const highlight = isC1 || isC2 || isC3 || isC4;
+                            const deps = getContextDependencies(ctx);
+                            return (
+                              <div className={`flex flex-col gap-3 bg-theme-bg border px-5 py-4 transition-all duration-150 shadow-sm relative min-h-[100px] ${highlight ? 'border-theme-comp font-bold' : 'border-theme-comp/25 opacity-70'}`}>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="flex items-center gap-2 flex-wrap font-mono font-black text-theme-text text-sm">
+                                    <Sliders className="w-4 h-4 text-theme-comp" />
+                                    <span>{ctx.text}</span>
+                                  </span>
+                                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 border uppercase ${
+                                    ctx.isAnchor ? 'bg-theme-bg border-theme-comp/30 text-theme-text' : 'bg-theme-comp/15 text-theme-accent'
+                                  }`}>
+                                    {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                                  </span>
+                                </div>
+                                {deps.length > 0 && (
+                                  <div className="pl-6 font-mono text-[10px] text-theme-accent flex items-center gap-1.5 uppercase tracking-wider font-bold">
+                                    <span>Dependency Chain:</span>
+                                    <span className="flex items-center gap-1 flex-wrap">
+                                      {deps.map((d, dIdx) => (
+                                        <span key={dIdx} className="flex items-center gap-1">
+                                          {dIdx > 0 && <span className="opacity-40">&rarr;</span>}
+                                          <span className="bg-theme-comp/10 border border-theme-comp/20 px-1.5 py-0.5 rounded-sm text-theme-text font-black">{d}</span>
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Carousel Navigation */}
+                          <div className="flex items-center justify-between pt-2 border-t border-theme-comp/10 select-none">
+                            <button
+                              onClick={() => setInnerModifierIndex(prev => {
+                                const len = currentAnalogyPuzzle?.contextVehicles.length || 1;
+                                return (prev - 1 + len) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5 text-theme-comp" />
+                              <span>Prev</span>
+                            </button>
+
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-mono font-bold text-theme-text/80">
+                                Modifier {innerModifierIndex + 1} of {currentAnalogyPuzzle?.contextVehicles.length || 0}
+                              </span>
+                              <div className="flex gap-1.5 flex-wrap justify-center">
+                                {currentAnalogyPuzzle?.contextVehicles.map((_, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => setInnerModifierIndex(idx)}
+                                    className={`w-1.5 h-1.5 rounded-full cursor-pointer transition-all duration-150 ${
+                                      innerModifierIndex === idx ? 'bg-theme-comp scale-125' : 'bg-theme-comp/20 hover:bg-theme-comp/40'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => setInnerModifierIndex(prev => {
+                                const len = currentAnalogyPuzzle?.contextVehicles.length || 1;
+                                return (prev + 1) % len;
+                              })}
+                              className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                            >
+                              <span>Next</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-theme-comp" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1.5 font-sans select-text max-h-[300px] overflow-y-auto mt-1">
+                          {currentAnalogyPuzzle?.contextVehicles.map((ctx, idx) => {
+                            const isC1 = ctx.id === currentAnalogyPuzzle?.context1;
+                            const isC2 = ctx.id === currentAnalogyPuzzle?.context2;
+                            const isC3 = !!currentAnalogyPuzzle?.context3 && ctx.id === currentAnalogyPuzzle.context3;
+                            const isC4 = !!currentAnalogyPuzzle?.context4 && ctx.id === currentAnalogyPuzzle.context4;
+                            const highlight = isC1 || isC2 || isC3 || isC4;
+                            const deps = getContextDependencies(ctx);
+                            return (
+                              <div key={idx} className={`flex flex-col gap-1 bg-theme-bg border px-4 py-2.5 text-xs ${highlight ? 'border-theme-comp font-bold' : 'border-theme-comp/20 opacity-60'}`}>
+                                <div className="flex items-center justify-between">
+                                  <span className="flex items-center gap-2 flex-wrap font-mono text-theme-text">
+                                    <Sliders className="w-3.5 h-3.5 text-theme-comp" />
+                                    <span>{ctx.text}</span>
+                                  </span>
+                                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 border uppercase ${
+                                    ctx.isAnchor ? 'bg-theme-bg border-theme-comp/30 text-theme-text' : 'bg-theme-comp/15 text-theme-accent'
+                                  }`}>
+                                    {ctx.isAnchor ? 'Relative Vector' : ctx.shiftMultiplier < 0 ? 'Inversion' : 'Scale'}
+                                  </span>
+                                </div>
+                                {deps.length > 0 && (
+                                  <div className="pl-5.5 font-mono text-[9px] text-theme-accent flex items-center gap-1.5 uppercase tracking-wider font-bold">
+                                    <span>Dependency Chain:</span>
+                                    <span className="flex items-center gap-1">
+                                      {deps.map((d, dIdx) => (
+                                        <span key={dIdx} className="flex items-center gap-1">
+                                          {dIdx > 0 && <span className="opacity-40">&rarr;</span>}
+                                          <span className="bg-theme-comp/10 border border-theme-comp/20 px-1 py-0.2 rounded-sm text-theme-text font-black">{d}</span>
+                                        </span>
+                                      ))}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )
+                    )}
+
+                    <div className="bg-theme-bg border border-theme-comp/20 p-4 text-[11px] text-theme-text/80 leading-relaxed font-sans mt-auto">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <HelpCircle className="w-3.5 h-3.5 text-theme-comp" />
+                        <span className="font-mono font-bold uppercase tracking-wider text-[9px]">Shift Mechanics Tip</span>
+                      </div>
+                      {workoutMode === 'classic'
+                        ? 'Because there are no mutations active, move to Stage 3 to view the query directly and input your answer!'
+                        : 'These modifiers stack sequentially. Any Inversion flips axis direction (multiplies by -1), while Scaling scales the magnitude.'
+                      }
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: Conclusion Frame */}
+                {carouselIndex === 2 && (
+                  <div className="flex-1 flex flex-col gap-3">
+                    <div className="border-b border-theme-comp/20 pb-2">
+                      <h4 className="font-mono text-xs font-bold uppercase text-theme-accent tracking-wide">
+                        Deduction Resolution & Submission
+                      </h4>
+                      <p className="text-[10px] text-theme-text/60 font-sans mt-0.5">
+                        Evaluate the relations, select your target response card, and submit your cognitive deductions.
+                      </p>
+                    </div>
+                       {/* Inquiry & Explanations (Slide 0) */}
+                    {(!innerCarouselEnabled || innerStage3Index === 0) && (
+                      <>
+                        {workoutMode === 'classic' && currentPuzzle && (
+                          <div className="bg-theme-bg border border-theme-comp p-4 my-1 select-text">
+                            <div className="flex gap-2.5 items-start">
+                              <HelpCircle className="w-5 h-5 shrink-0 mt-0.5 text-theme-comp" />
+                              <div className="flex flex-col">
+                                <p className="text-[10px] font-mono font-bold text-theme-text uppercase tracking-wide opacity-75">Deduce Vector Displacement</p>
+                                <p className="text-sm font-sans font-bold text-theme-text leading-relaxed mt-1">
+                                  Determine the coordinates position of <strong className="font-mono px-1 ml-1" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{currentPuzzle.question.entityA}</strong> with respect to <strong className="font-mono border border-theme-comp/40 px-1 ml-1 bg-theme-card">{currentPuzzle.question.entityB}</strong>.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {workoutMode === 'context' && currentCtxPuzzle && (
+                          <div className="bg-theme-bg border border-theme-comp p-4 my-1 select-text font-sans">
+                            <div className="flex gap-2.5 items-start">
+                              <HelpCircle className="w-5 h-5 shrink-0 mt-0.5 text-theme-comp" />
+                              <div className="flex flex-col flex-1">
+                                <p className="text-[10px] font-mono font-bold text-theme-text uppercase tracking-wide opacity-60">Hyperspatial Resolution Inquiry</p>
+                                <p className="text-theme-text font-bold leading-relaxed mt-1 text-sm md:text-base">
+                                  What is <strong className="font-mono px-1.5 py-0.5 text-xs" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>{currentCtxPuzzle.queryNode}::{currentCtxPuzzle.queryTarget}</strong> in context <strong className="font-mono border border-theme-comp px-1.5 py-0.5 bg-theme-card font-extrabold text-theme-accent text-xs">[{currentCtxPuzzle.activeContextGroup.join('')}]</strong>?
+                                </p>
+                                
+                                <div className="mt-3 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-2.5 flex-wrap gap-2">
+                                  <span className="text-[10px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
+                                  <button
+                                    onClick={() => setShowCtxExplanation(prev => !prev)}
+                                    className="px-2.5 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"
+                                  >
+                                    <Brain className="w-3 h-3" />
+                                    {showCtxExplanation ? 'Hide Derivation' : 'Explain Process'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {workoutMode === 'analogy' && currentAnalogyPuzzle && (
+                          <div className="bg-theme-bg border border-theme-comp p-4 my-1 select-text font-sans">
+                            <div className="flex gap-2.5 items-start">
+                              <HelpCircle className="w-5 h-5 shrink-0 mt-0.5 text-theme-comp animate-pulse" />
+                              <div className="flex flex-col flex-1">
+                                <p className="text-[10px] font-mono font-bold text-theme-text uppercase tracking-wide opacity-65">Cognitive Analogy Statement</p>
+                                
+                                {currentAnalogyPuzzle.analogyStructureType === 'nested' ? (
+                                  <div className="flex flex-col gap-2 mt-2 p-3 bg-theme-card border border-theme-comp/40 text-xs">
+                                    <div className="text-center font-mono text-[9px] uppercase tracking-wider text-theme-text/40 mb-0.5">- Left Meta Relation -</div>
+                                    <div className="flex flex-col gap-1 border border-theme-comp/10 p-2 bg-theme-bg/30">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1}</span>
+                                        <span className="font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeA} : {currentAnalogyPuzzle.nodeB}</span>
+                                      </div>
+                                      <div className="text-center italic font-serif text-[10px] opacity-40">::</div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2}</span>
+                                        <span className="font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeC} : {currentAnalogyPuzzle.nodeD}</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-center italic font-serif text-xs py-1 text-theme-accent font-extrabold select-none">is meta-analogous to</div>
+
+                                    <div className="text-center font-mono text-[9px] uppercase tracking-wider text-theme-text/40 mb-0.5">- Right Meta Relation -</div>
+                                    <div className="flex flex-col gap-1 border border-theme-comp/10 p-2 bg-theme-bg/30">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context3}</span>
+                                        <span className="font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeE} : {currentAnalogyPuzzle.nodeF}</span>
+                                      </div>
+                                      <div className="text-center italic font-serif text-[10px] opacity-40">::</div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context4}</span>
+                                        <span className="font-mono font-bold text-theme-text">
+                                          {currentAnalogyPuzzle.nodeG} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeH}</span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : currentAnalogyPuzzle.analogyChainLength === 3 ? (
+                                  <div className="flex flex-col gap-1.5 mt-2 p-3 bg-theme-card border border-theme-comp/40 text-xs">
+                                    <div className="flex items-center justify-between border-b border-theme-comp/10 pb-1.5">
+                                      <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1} (Term 1)</span>
+                                      <span className="font-mono font-bold text-theme-text">
+                                        <span className="text-theme-accent font-extrabold">{currentAnalogyPuzzle.nodeA}</span> : {currentAnalogyPuzzle.nodeB}
+                                      </span>
+                                    </div>
+                                    <div className="text-center italic font-serif text-[10px] opacity-50">::</div>
+                                    <div className="flex items-center justify-between py-1 bg-theme-bg/20 border-y border-theme-comp/5">
+                                      <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2} (Term 2)</span>
+                                      <span className="font-mono font-bold text-theme-text">{currentAnalogyPuzzle.nodeC} : {currentAnalogyPuzzle.nodeD}</span>
+                                    </div>
+                                    <div className="text-center italic font-serif text-[10px] opacity-50">::</div>
+                                    <div className="flex items-center justify-between border-t border-theme-comp/10 pt-1.5">
+                                      <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context3} (Term 3)</span>
+                                      <span className="font-mono font-bold text-theme-text flex items-center gap-1">
+                                        {currentAnalogyPuzzle.nodeE} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeF}</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-1.5 mt-2 p-3 bg-theme-card border border-theme-comp/40 text-xs">
+                                    <div className="flex items-center justify-between border-b border-theme-comp/10 pb-1.5">
+                                      <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context1} (Term 1)</span>
+                                      <span className="font-mono font-bold text-theme-text">
+                                        <span className="text-theme-accent font-extrabold">{currentAnalogyPuzzle.nodeA}</span> : {currentAnalogyPuzzle.nodeB}
+                                      </span>
+                                    </div>
+                                    <div className="text-center italic font-serif text-[11px] opacity-60">is analogous to</div>
+                                    <div className="flex items-center justify-between border-t border-theme-comp/10 pt-1.5">
+                                      <span className="text-[10px] font-mono uppercase text-theme-accent/80">Context {currentAnalogyPuzzle.context2} (Term 2)</span>
+                                      <span className="font-mono font-bold text-theme-text">
+                                        {currentAnalogyPuzzle.nodeC} : <span className="font-extrabold text-theme-accent bg-theme-comp/15 px-1.5 py-0.5 border border-theme-comp">{currentAnalogyPuzzle.nodeD}</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <p className="text-theme-text text-[11px] leading-relaxed mt-3">
+                                  {currentAnalogyPuzzle.analogyStructureType === 'nested'
+                                    ? `Determine if the relationship difference (Left Meta Offset) between Context ${currentAnalogyPuzzle.context1} and ${currentAnalogyPuzzle.context2} aligns perfectly with the difference (Right Meta Offset) between Context ${currentAnalogyPuzzle.context3} and ${currentAnalogyPuzzle.context4}.`
+                                    : currentAnalogyPuzzle.analogyChainLength === 3
+                                      ? `Evaluate whether the spatial relationships across all 3 Terms after applying their respective context modifiers are completely congruent.`
+                                      : `Evaluate whether the spatial relationship in Term 1 (under Context ${currentAnalogyPuzzle.context1}) matches exactly with the relationship in Term 2 (under Context ${currentAnalogyPuzzle.context2}) after respective shift products are applied.`
+                                  }
+                                </p>
+                                
+                                <div className="mt-3 flex items-center justify-between border-t border-dashed border-theme-comp/20 pt-2.5 flex-wrap gap-2">
+                                  <span className="text-[10px] font-mono text-theme-text/60 font-medium">Need help spatializing the transformations?</span>
+                                  <button
+                                    onClick={() => setShowAnalogyExplanation(prev => !prev)}
+                                    className="px-2.5 py-1 bg-theme-card hover:bg-theme-comp/10 text-theme-text text-[10px] font-mono font-bold border border-theme-comp flex items-center gap-1.5 cursor-pointer uppercase tracking-tight select-none transition-all duration-150"
+                                  >
+                                    <Brain className="w-3 h-3" />
+                                    {showAnalogyExplanation ? 'Hide Derivation' : 'Explain Process'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {showCtxExplanation && workoutMode === 'context' && currentCtxPuzzle && (
+                          <div className="bg-theme-bg border border-theme-comp p-4 my-1 text-[11px] font-mono max-h-[200px] overflow-y-auto select-text animate-fadeIn">
+                            <div className="flex items-center gap-1.5 text-theme-text font-bold border-b border-theme-comp pb-2 mb-2 uppercase tracking-wide text-[10px]">
+                              <Activity className="w-4 h-4 text-theme-comp animate-pulse" />
+                              <span>Hyperspatial Logic Resolution Log</span>
+                            </div>
+                            <div className="space-y-3 text-theme-text leading-relaxed">
+                              <div>
+                                <span className="font-bold border-b border-theme-comp/30 pb-0.5">1. Baseline Coordinate Difference:</span> <br />
+                                - The initial spatial offset <strong className="font-bold">{currentCtxPuzzle.queryNode}::{currentCtxPuzzle.queryTarget}</strong> matches relation: <br />
+                                <code className="bg-theme-card px-2 py-0.5 font-bold border border-theme-comp/25 inline-block mt-1">
+                                  [{currentCtxPuzzle.baseOffsetVector.slice(0, selectedDim).join(', ')}] ({currentCtxPuzzle.baseRelation})
+                                </code>
+                              </div>
+                              
+                              <div>
+                                <span className="font-bold border-b border-theme-comp/30 pb-0.5">2. Compiling Modifiers Stack:</span> <br />
+                                {currentCtxPuzzle.contextVehicles.map((cv, id) => {
+                                  const isActive = currentCtxPuzzle.activeContextGroup.includes(cv.id);
+                                  const repVec = cv.representedVector || Array(selectedDim).fill(0);
+                                  const relationName = describeContextVector(repVec, selectedDim);
+                                  return (
+                                    <span key={id} className="block pl-3 mt-1.5 border-l border-dashed border-theme-comp/30">
+                                      • <strong className="text-[11px]">{cv.text}</strong> &rarr; <span className={isActive ? "font-bold bg-theme-comp/10 border border-theme-comp text-theme-accent px-1" : "opacity-45"}>
+                                        {isActive ? 'ACTIVE IN STACK' : 'BYPASSED'}
+                                      </span>
+                                      {isActive && (
+                                        <span className="block text-[10px] pl-2 mt-0.5 text-theme-text/85">
+                                          Result: <strong className="font-sans font-bold text-xs text-theme-accent">{relationName} [{repVec.slice(0, selectedDim).join(', ')}]</strong>
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              
+                              <div className="border-t border-dashed border-theme-comp/20 pt-2">
+                                <span className="font-bold border-b border-theme-comp/30 pb-0.5">3. Compounding Result:</span> <br />
+                                <code className="px-2 py-1 inline-block mt-1 font-bold text-xs" style={{ backgroundColor: 'var(--main-color-complementary)', color: 'var(--main-color)' }}>
+                                  [{currentCtxPuzzle.projectedVector.slice(0, selectedDim).join(', ')}] ({currentCtxPuzzle.projectedRelation})
+                                </code>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {showAnalogyExplanation && workoutMode === 'analogy' && currentAnalogyPuzzle && (
+                          <div className="bg-theme-bg border border-theme-comp p-4 my-1 text-[11px] font-mono max-h-[200px] overflow-y-auto select-text animate-fadeIn">
+                            <div className="flex items-center gap-1.5 text-theme-text font-bold border-b border-theme-comp pb-2 mb-2 uppercase tracking-wide text-[10px]">
+                              <Activity className="w-4 h-4 text-theme-comp animate-pulse" />
+                              <span>Analogy Logic Resolution Log</span>
+                            </div>
+                            <div className="space-y-2 text-theme-text leading-relaxed">
+                              {currentAnalogyPuzzle.explanation.split('\n\n').map((paragraph, pIdx) => (
+                                <p key={pIdx} dangerouslySetInnerHTML={{ 
+                                  __html: paragraph
+                                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                    .replace(/\$(.*?)\$/g, '<code class="bg-theme-card border border-theme-comp/20 px-1 font-mono">$1</code>')
+                                }} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Multiple Choice & Submit Buttons (Slide 1) */}
+                    {(!innerCarouselEnabled || innerStage3Index === 1) && (
+                      <>
+                        <div className="flex flex-col gap-2 mt-2 select-none">
+                          <span className="text-[10px] font-mono text-theme-text/60 font-bold uppercase tracking-wider">SELECT RESPONSE CARD</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {workoutMode === 'classic' && currentPuzzle?.options.map((opt, idx) => {
+                              const isSelected = selectedAnswerIdx === idx;
+                              let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
+                              if (isSelected) cardStyle = "border border-theme-comp bg-theme-comp text-theme-bg font-bold";
+                              if (isSubmitted) {
+                                if (opt.isCorrect) {
+                                  cardStyle = "border border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
+                                } else if (isSelected) {
+                                  cardStyle = "border border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
+                                } else {
+                                  cardStyle = "border-theme-comp/10 bg-theme-bg/10 opacity-30 cursor-not-allowed";
+                                }
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => handleSelectAnswer(idx)}
+                                  disabled={isSubmitted}
+                                  className={`text-left p-3 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none text-xs ${cardStyle}`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className={`w-4.5 h-4.5 border text-[9px] font-mono flex items-center justify-center font-bold rounded-none ${
+                                      isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
+                                    }`}>
+                                      {String.fromCharCode(65 + idx)}
+                                    </span>
+                                    <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.relation}</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+
+                            {workoutMode === 'context' && currentCtxPuzzle?.options.map((opt, idx) => {
+                              const isSelected = selectedCtxAnswerIdx === idx;
+                              let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
+                              if (isSelected) cardStyle = "border border-theme-comp bg-theme-comp text-theme-bg font-bold";
+                              if (isSubmitted) {
+                                if (opt.isCorrect) {
+                                  cardStyle = "border border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
+                                } else if (isSelected) {
+                                  cardStyle = "border border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
+                                } else {
+                                  cardStyle = "border-theme-comp/10 bg-theme-bg/10 opacity-30 cursor-not-allowed";
+                                }
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => handleSelectAnswer(idx)}
+                                  disabled={isSubmitted}
+                                  className={`text-left p-3 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none text-xs ${cardStyle}`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className={`w-4.5 h-4.5 border text-[9px] font-mono flex items-center justify-center font-bold rounded-none ${
+                                      isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
+                                    }`}>
+                                      {String.fromCharCode(65 + idx)}
+                                    </span>
+                                    <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.text}</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+
+                            {workoutMode === 'analogy' && currentAnalogyPuzzle?.options.map((opt, idx) => {
+                              const isSelected = selectedAnalogyAnswerIdx === idx;
+                              let cardStyle = "border-theme-comp/30 bg-theme-bg/50 text-theme-text hover:bg-theme-comp/10";
+                              if (isSelected) cardStyle = "border border-theme-comp bg-theme-comp text-theme-bg font-bold";
+                              if (isSubmitted) {
+                                if (opt.isCorrect) {
+                                  cardStyle = "border border-green-600 bg-theme-bg text-green-500 font-bold shadow-sm";
+                                } else if (isSelected) {
+                                  cardStyle = "border border-red-500 bg-theme-bg text-red-500 line-through opacity-70";
+                                } else {
+                                  cardStyle = "border-theme-comp/10 bg-theme-bg/10 opacity-30 cursor-not-allowed";
+                                }
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => handleSelectAnswer(idx)}
+                                  disabled={isSubmitted}
+                                  className={`text-left p-3 border transition-all duration-150 cursor-pointer flex items-center justify-between rounded-none text-xs ${cardStyle}`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className={`w-4.5 h-4.5 border text-[9px] font-mono flex items-center justify-center font-bold rounded-none ${
+                                      isSelected ? 'bg-theme-comp border-theme-comp text-theme-bg' : 'border-theme-comp text-theme-text/50'
+                                    }`}>
+                                      {String.fromCharCode(65 + idx)}
+                                    </span>
+                                    <span className="font-mono text-xs font-bold uppercase tracking-wide">{opt.text}</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Submit & Next Actions Block */}
+                        <div className="mt-4 pt-3 border-t border-theme-comp/30 select-none">
+                          {!isSubmitted ? (
+                            <button
+                              onClick={handleSubmitAnswer}
+                              disabled={
+                                (workoutMode === 'classic' && selectedAnswerIdx === null) ||
+                                (workoutMode === 'context' && selectedCtxAnswerIdx === null) ||
+                                (workoutMode === 'analogy' && selectedAnalogyAnswerIdx === null)
+                              }
+                              className="w-full bg-theme-comp hover:bg-theme-comp/90 disabled:opacity-30 disabled:cursor-not-allowed text-theme-bg text-xs font-mono font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all duration-150 uppercase tracking-widest h-[44px]"
+                            >
+                              <span>
+                                {workoutMode === 'classic' 
+                                  ? 'Submit Relational Deductions' 
+                                  : workoutMode === 'context' 
+                                    ? 'Submit Projections deductions' 
+                                    : 'Submit Analogy Resolution'
+                                }
+                              </span>
+                              <ArrowRight className="w-4 h-4 ml-0.5" />
+                            </button>
+                          ) : (
+                            <div className="flex flex-col gap-3">
+                              <div className="text-center py-1 text-xs font-sans font-bold uppercase tracking-wider">
+                                {workoutMode === 'classic' && (
+                                  currentPuzzle?.options[selectedAnswerIdx ?? 0]?.isCorrect ? (
+                                    <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
+                                      <Trophy className="w-4 h-4" /> SUCCESS • +{100 + Math.max(0, Math.floor((60 - seconds) * 1.5))} SCORE ACCUMULATED
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
+                                      DEDUCTION ENCOUNTERED COGNITIVE DIVERGENCE
+                                    </span>
+                                  )
+                                )}
+
+                                {workoutMode === 'context' && (
+                                  currentCtxPuzzle?.options[selectedCtxAnswerIdx ?? 0]?.isCorrect ? (
+                                    <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
+                                      <Trophy className="w-4 h-4" /> SUCCESS • +{120 + Math.max(0, Math.floor((90 - seconds) * 1.5))} SCORE GAINED
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
+                                      PROJECTION DEVIAVATION DETECTED BY MATRIX
+                                    </span>
+                                  )
+                                )}
+
+                                {workoutMode === 'analogy' && (
+                                  currentAnalogyPuzzle?.options[selectedAnalogyAnswerIdx ?? 0]?.isCorrect ? (
+                                    <span className="text-green-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-green-600 py-2 font-bold font-mono">
+                                      <Trophy className="w-4 h-4" /> SUCCESS • +{150 + Math.max(0, Math.floor((120 - seconds) * 1.5))} SCORE GAINED
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-500 flex items-center justify-center gap-1.5 bg-theme-bg border border-red-500 py-2 font-bold font-mono">
+                                      ANALOGOUS RESOLUTION MISALIGNED
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                              
+                              <button
+                                onClick={handleNextPuzzle}
+                                className="w-full bg-theme-comp hover:bg-theme-comp/90 text-theme-bg text-xs font-sans font-bold py-3 px-4 border border-theme-comp flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wide h-[44px]"
+                              >
+                                <RotateCw className="w-3.5 h-3.5" />
+                                <span>
+                                  {workoutMode === 'classic' 
+                                    ? 'Request Next Vector Matrix' 
+                                    : workoutMode === 'context' 
+                                      ? 'Request Next Coordinate Domain' 
+                                      : 'Request Next Analogy Matrix'
+                                  }
+                                </span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Nested Stage 3 Inner Carousel Sub-stepper */}
+                    {innerCarouselEnabled && (
+                      <div className="flex items-center justify-between pt-4 mt-2 border-t border-theme-comp/20 select-none">
+                        <button
+                          onClick={() => setInnerStage3Index(0)}
+                          disabled={innerStage3Index === 0}
+                          className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp disabled:opacity-30 disabled:cursor-not-allowed bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5 text-theme-comp" />
+                          <span>01. Inquiry</span>
+                        </button>
+
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[10px] font-mono font-bold text-theme-text/80">
+                            Stage 3 Resolution: Panel {innerStage3Index + 1} of 2
+                          </span>
+                          <div className="flex gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full ${innerStage3Index === 0 ? 'bg-theme-comp scale-110' : 'bg-theme-comp/20'}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${innerStage3Index === 1 ? 'bg-theme-comp scale-110' : 'bg-theme-comp/20'}`} />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setInnerStage3Index(1)}
+                          disabled={innerStage3Index === 1}
+                          className="flex items-center gap-1 px-3 py-1.5 border border-theme-comp/30 hover:border-theme-comp disabled:opacity-30 disabled:cursor-not-allowed bg-theme-bg hover:bg-theme-comp/10 text-theme-text text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all duration-150"
+                        >
+                          <span>02. Options</span>
+                          <ChevronRight className="w-3.5 h-3.5 text-theme-comp" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Bottom Stepper Arrow Controls */}
+            <div className="flex items-center justify-between border-t border-theme-comp/20 pt-4 mt-6 select-none z-10">
+              <button
+                disabled={carouselIndex === 0}
+                onClick={() => setCarouselIndex(prev => Math.max(0, prev - 1))}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold uppercase border border-theme-comp text-theme-text hover:bg-theme-comp/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
+              </button>
+              
+              <div className="flex items-center gap-2 text-xs font-mono text-theme-text/70">
+                <span>Stage {carouselIndex + 1} of 3</span>
+                <div className="flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${carouselIndex === 0 ? 'bg-theme-comp' : 'bg-theme-comp/20'}`}></span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${carouselIndex === 1 ? 'bg-theme-comp' : 'bg-theme-comp/20'}`}></span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${carouselIndex === 2 ? 'bg-theme-comp' : 'bg-theme-comp/20'}`}></span>
+                </div>
               </div>
+
+              <button
+                disabled={carouselIndex === 2}
+                onClick={() => setCarouselIndex(prev => Math.min(2, prev + 1))}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold uppercase border border-theme-comp text-theme-text hover:bg-theme-comp/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150 cursor-pointer"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
+
           </div>
         </div>
       )}
+
     </div>
   );
 }
