@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DimensionCount, Puzzle, PuzzleDifficulty, TrainingStats } from '../types';
-import { generateTrainerPuzzle, getBasisRelations, generateUniqueCVCNames } from '../utils/engine';
+import { DimensionCount, Puzzle, PuzzleDifficulty, TrainingStats, AbstractRelationMapping } from '../types';
+import { generateTrainerPuzzle, getBasisRelations, generateUniqueCVCNames, generateAbstractMapping, translateStandardRelationToAbstract, translateTextToAbstract, scrambleStandardRelation, scrambleTextStandard } from '../utils/engine';
 import { 
   Brain, Trophy, Clock, ShieldCheck, HelpCircle, 
   ArrowRight, RotateCw, Activity, Compass, Sliders, Zap,
@@ -131,6 +131,10 @@ interface TrainingWorkspaceProps {
   }) => void;
   isSubmitted: boolean;
   setIsSubmitted: (isSub: boolean) => void;
+  abstractRelationsEnabled: boolean;
+  abstractMapping: AbstractRelationMapping;
+  onRegenerateAbstractMapping: (newMapping: AbstractRelationMapping) => void;
+  scrambleComponentOrder?: boolean;
 }
 
 const describeContextVector = (vec: number[], dim: DimensionCount): string => {
@@ -1729,6 +1733,152 @@ export function generateAnalogyPuzzle(
   };
 }
 
+// === LOCAL TRANSLATION HELPERS FOR ABSTRACT MODE ===
+
+function translatePuzzleToAbstract(
+  puzzle: Puzzle,
+  mapping: AbstractRelationMapping,
+  dimension: DimensionCount,
+  scramble?: boolean
+): Puzzle {
+  return {
+    ...puzzle,
+    premises: puzzle.premises.map(p => ({
+      ...p,
+      relation: translateStandardRelationToAbstract(p.relation, mapping, dimension, scramble)
+    })),
+    options: puzzle.options.map(o => ({
+      ...o,
+      relation: translateStandardRelationToAbstract(o.relation, mapping, dimension, scramble)
+    })),
+    explanation: translateTextToAbstract(puzzle.explanation, mapping, dimension, scramble)
+  };
+}
+
+function translateContextPuzzleToAbstract(
+  puzzle: ContextPuzzle,
+  mapping: AbstractRelationMapping,
+  dimension: DimensionCount,
+  scramble?: boolean
+): ContextPuzzle {
+  return {
+    ...puzzle,
+    nodeDefinitions: puzzle.nodeDefinitions.map(n => ({
+      ...n,
+      relation: translateStandardRelationToAbstract(n.relation, mapping, dimension, scramble)
+    })),
+    contextVehicles: puzzle.contextVehicles.map(v => ({
+      ...v,
+      boundRelation: translateStandardRelationToAbstract(v.boundRelation, mapping, dimension, scramble)
+    })),
+    baseRelation: translateStandardRelationToAbstract(puzzle.baseRelation, mapping, dimension, scramble),
+    projectedRelation: translateStandardRelationToAbstract(puzzle.projectedRelation, mapping, dimension, scramble),
+    options: puzzle.options.map(o => ({
+      ...o,
+      text: translateStandardRelationToAbstract(o.text, mapping, dimension, scramble)
+    }))
+  };
+}
+
+function translateAnalogyPuzzleToAbstract(
+  puzzle: AnalogyPuzzle,
+  mapping: AbstractRelationMapping,
+  dimension: DimensionCount,
+  scramble?: boolean
+): AnalogyPuzzle {
+  return {
+    ...puzzle,
+    nodeDefinitions: puzzle.nodeDefinitions.map(n => ({
+      ...n,
+      relation: translateStandardRelationToAbstract(n.relation, mapping, dimension, scramble)
+    })),
+    contextVehicles: puzzle.contextVehicles.map(v => ({
+      ...v,
+      boundRelation: translateStandardRelationToAbstract(v.boundRelation, mapping, dimension, scramble)
+    })),
+    baseRelationName: translateStandardRelationToAbstract(puzzle.baseRelationName, mapping, dimension, scramble),
+    projectedRelationName: translateStandardRelationToAbstract(puzzle.projectedRelationName, mapping, dimension, scramble),
+    options: puzzle.options.map(o => ({
+      ...o,
+      text: translateStandardRelationToAbstract(o.text, mapping, dimension, scramble)
+    })),
+    explanation: translateTextToAbstract(puzzle.explanation, mapping, dimension, scramble)
+  };
+}
+
+// === LOCAL SCRAMBLING HELPERS FOR STANDARD MODE ===
+
+function scramblePuzzleStandard(
+  puzzle: Puzzle,
+  dimension: DimensionCount,
+  scramble?: boolean
+): Puzzle {
+  if (!scramble) return puzzle;
+  return {
+    ...puzzle,
+    premises: puzzle.premises.map(p => ({
+      ...p,
+      relation: scrambleStandardRelation(p.relation, dimension, true)
+    })),
+    options: puzzle.options.map(o => ({
+      ...o,
+      relation: scrambleStandardRelation(o.relation, dimension, true)
+    })),
+    explanation: scrambleTextStandard(puzzle.explanation, dimension, true)
+  };
+}
+
+function scrambleContextPuzzleStandard(
+  puzzle: ContextPuzzle,
+  dimension: DimensionCount,
+  scramble?: boolean
+): ContextPuzzle {
+  if (!scramble) return puzzle;
+  return {
+    ...puzzle,
+    nodeDefinitions: puzzle.nodeDefinitions.map(n => ({
+      ...n,
+      relation: scrambleStandardRelation(n.relation, dimension, true)
+    })),
+    contextVehicles: puzzle.contextVehicles.map(v => ({
+      ...v,
+      boundRelation: scrambleStandardRelation(v.boundRelation, dimension, true)
+    })),
+    baseRelation: scrambleStandardRelation(puzzle.baseRelation, dimension, true),
+    projectedRelation: scrambleStandardRelation(puzzle.projectedRelation, dimension, true),
+    options: puzzle.options.map(o => ({
+      ...o,
+      text: scrambleStandardRelation(o.text, dimension, true)
+    }))
+  };
+}
+
+function scrambleAnalogyPuzzleStandard(
+  puzzle: AnalogyPuzzle,
+  dimension: DimensionCount,
+  scramble?: boolean
+): AnalogyPuzzle {
+  if (!scramble) return puzzle;
+  return {
+    ...puzzle,
+    nodeDefinitions: puzzle.nodeDefinitions.map(n => ({
+      ...n,
+      relation: scrambleStandardRelation(n.relation, dimension, true)
+    })),
+    contextVehicles: puzzle.contextVehicles.map(v => ({
+      ...v,
+      boundRelation: scrambleStandardRelation(v.boundRelation, dimension, true)
+    })),
+    baseRelationName: scrambleStandardRelation(puzzle.baseRelationName, dimension, true),
+    projectedRelationName: scrambleStandardRelation(puzzle.projectedRelationName, dimension, true),
+    options: puzzle.options.map(o => ({
+      ...o,
+      text: scrambleStandardRelation(o.text, dimension, true)
+    })),
+    explanation: scrambleTextStandard(puzzle.explanation, dimension, true)
+  };
+}
+
 export default function TrainingWorkspace({
   stats,
   onUpdateStats,
@@ -1739,7 +1889,11 @@ export default function TrainingWorkspace({
   setWorkoutMode,
   onUpdateContextDetails,
   isSubmitted,
-  setIsSubmitted
+  setIsSubmitted,
+  abstractRelationsEnabled,
+  abstractMapping,
+  onRegenerateAbstractMapping,
+  scrambleComponentOrder
 }: TrainingWorkspaceProps) {
   const [selectedDim, setSelectedDim] = useState<DimensionCount>(2);
   const [difficulty, setDifficulty] = useState<PuzzleDifficulty>('Beginner');
@@ -1793,11 +1947,23 @@ export default function TrainingWorkspace({
     setShowCtxExplanation(false);
     setShowAnalogyExplanation(false);
 
+    let activeMapping = abstractMapping;
+    if (abstractRelationsEnabled) {
+      const freshMapping = generateAbstractMapping();
+      onRegenerateAbstractMapping(freshMapping);
+      activeMapping = freshMapping;
+    }
+
     if (workoutMode === 'classic') {
       const useCustomParams = generatorMode === 'custom';
       const customNodeCount = useCustomParams ? (customAnchors + 1) : undefined;
       const customScrambleSetting = useCustomParams ? scrambleSetting : undefined;
-      const newPuzzle = generateTrainerPuzzle(selectedDim, difficulty, customNodeCount, customScrambleSetting);
+      let newPuzzle = generateTrainerPuzzle(selectedDim, difficulty, customNodeCount, customScrambleSetting, scrambleComponentOrder);
+      if (abstractRelationsEnabled) {
+        newPuzzle = translatePuzzleToAbstract(newPuzzle, activeMapping, selectedDim, scrambleComponentOrder);
+      } else if (scrambleComponentOrder) {
+        newPuzzle = scramblePuzzleStandard(newPuzzle, selectedDim, scrambleComponentOrder);
+      }
       const visualPremises = newPuzzle.premises.map((p, idx) => ({
         id: `pzp-${idx}`,
         entityA: p.entityA,
@@ -1811,7 +1977,7 @@ export default function TrainingWorkspace({
       setIsSubmitted(false);
       setSeconds(0);
     } else if (workoutMode === 'context') {
-      const newCtxPuzzle = generateContextPuzzle(selectedDim, difficulty, {
+      let newCtxPuzzle = generateContextPuzzle(selectedDim, difficulty, {
         useCustom: generatorMode === 'custom',
         anchorCount: customAnchors,
         anchorDefinitionsCount: customAnchorDefinitions,
@@ -1822,6 +1988,11 @@ export default function TrainingWorkspace({
         scrambleSetting: scrambleSetting,
         contextType: contextType
       });
+      if (abstractRelationsEnabled) {
+        newCtxPuzzle = translateContextPuzzleToAbstract(newCtxPuzzle, activeMapping, selectedDim, scrambleComponentOrder);
+      } else if (scrambleComponentOrder) {
+        newCtxPuzzle = scrambleContextPuzzleStandard(newCtxPuzzle, selectedDim, scrambleComponentOrder);
+      }
       setCurrentCtxPuzzle(newCtxPuzzle);
       setSelectedCtxAnswerIdx(null);
       setIsSubmitted(false);
@@ -1843,7 +2014,7 @@ export default function TrainingWorkspace({
         activeModifiers: [1, 1, 1, 1]
       });
     } else {
-      const newAnalogyPuzzle = generateAnalogyPuzzle(selectedDim, difficulty, {
+      let newAnalogyPuzzle = generateAnalogyPuzzle(selectedDim, difficulty, {
         useCustom: generatorMode === 'custom',
         anchorCount: customAnchors,
         anchorDefinitionsCount: customAnchorDefinitions,
@@ -1857,6 +2028,11 @@ export default function TrainingWorkspace({
         analogyChainLength: customAnalogyLength,
         analogyStructureType: customAnalogyStructure
       });
+      if (abstractRelationsEnabled) {
+        newAnalogyPuzzle = translateAnalogyPuzzleToAbstract(newAnalogyPuzzle, activeMapping, selectedDim, scrambleComponentOrder);
+      } else if (scrambleComponentOrder) {
+        newAnalogyPuzzle = scrambleAnalogyPuzzleStandard(newAnalogyPuzzle, selectedDim, scrambleComponentOrder);
+      }
       setCurrentAnalogyPuzzle(newAnalogyPuzzle);
       setSelectedAnalogyAnswerIdx(null);
       setIsSubmitted(false);
@@ -1983,7 +2159,8 @@ export default function TrainingWorkspace({
     customInterrelation,
     customActiveCount,
     scrambleSetting,
-    contextType
+    contextType,
+    abstractRelationsEnabled
   ]);
 
   useEffect(() => {

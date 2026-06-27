@@ -1,5 +1,16 @@
 export type Vector = number[];
 
+export interface AbstractRelationMapping {
+  '0_pos': string;
+  '0_neg': string;
+  '1_pos': string;
+  '1_neg': string;
+  '2_pos': string;
+  '2_neg': string;
+  '3_pos': string;
+  '3_neg': string;
+}
+
 export interface BasisRelation {
   name: string;
   vector: Vector;

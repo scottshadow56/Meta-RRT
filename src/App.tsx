@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DimensionCount, Premise, TrainingStats, SolverResult, Vector } from './types';
-import { solveRelations, getBasisRelations } from './utils/engine';
+import { DimensionCount, Premise, TrainingStats, SolverResult, Vector, AbstractRelationMapping } from './types';
+import { solveRelations, getBasisRelations, generateAbstractMapping, describeAbstractVector, translateTextToAbstract } from './utils/engine';
 import Visualizer from './components/Visualizer';
 import TrainingWorkspace from './components/TrainingWorkspace';
 import SandboxWorkspace from './components/SandboxWorkspace';
 import AnalyticsPanel from './components/AnalyticsPanel';
 import ContextProjector from './components/ContextProjector';
-import { Brain, Compass, Layers, Activity, FileText, Zap, Sparkles, Trophy, Network, Sun, Moon } from 'lucide-react';
+import AbstractRelationsCodex from './components/AbstractRelationsCodex';
+import { Brain, Compass, Layers, Activity, FileText, Zap, Sparkles, Trophy, Network, Sun, Moon, Shuffle } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'rrt_neural_stats_v1';
 
@@ -38,7 +39,7 @@ export default function App() {
   }, [theme]);
 
   // Workout mode selection inside Training tab
-  const [workoutMode, setWorkoutMode] = useState<'classic' | 'context'>('classic');
+  const [workoutMode, setWorkoutMode] = useState<'classic' | 'context' | 'analogy'>('classic');
   const [contextBaseVector, setContextBaseVector] = useState<number[]>([1,0,0,0]);
   const [contextProjectedVector, setContextProjectedVector] = useState<number[]>([1,0,0,0]);
   const [contextBaseRelationName, setContextBaseRelationName] = useState<string>('NORTHEAST');
@@ -55,6 +56,13 @@ export default function App() {
 
   // Dimensional Space setting
   const [dimension, setDimension] = useState<DimensionCount>(2);
+
+  // Abstract Relations State
+  const [abstractRelationsEnabled, setAbstractRelationsEnabled] = useState<boolean>(false);
+  const [abstractMapping, setAbstractMapping] = useState<AbstractRelationMapping>(() => generateAbstractMapping());
+
+  // Relation Scrambler State
+  const [scrambleComponentOrder, setScrambleComponentOrder] = useState<boolean>(false);
 
   // Constraints/Premises list
   const [premises, setPremises] = useState<Premise[]>([]);
@@ -99,14 +107,22 @@ export default function App() {
   // Keep basis relations mapping synchronized when the dimension counts change
   useEffect(() => {
     const defaults = getBasisRelations(dimension);
-    setBasisRelations(defaults);
+    let finalBasis = defaults;
+    if (abstractRelationsEnabled) {
+      finalBasis = {};
+      for (const [key, vec] of Object.entries(defaults)) {
+        const abstractName = describeAbstractVector(vec, abstractMapping, dimension, scrambleComponentOrder);
+        finalBasis[abstractName] = vec;
+      }
+    }
+    setBasisRelations(finalBasis);
     
     // Clear out of bounds premises when dimension is downscaled
     setPremises(prev => prev.filter(p => {
-      const vec = defaults[p.relation];
+      const vec = finalBasis[p.relation];
       return vec && vec.length === dimension;
     }));
-  }, [dimension]);
+  }, [dimension, abstractRelationsEnabled, abstractMapping, scrambleComponentOrder]);
 
   const handleUpdateContextDetails = (details: {
     dimension: DimensionCount;
@@ -200,6 +216,37 @@ export default function App() {
                 </button>
               ))}
             </div>
+            
+            <button
+              onClick={() => {
+                const newState = !abstractRelationsEnabled;
+                setAbstractRelationsEnabled(newState);
+                if (newState) {
+                  setAbstractMapping(generateAbstractMapping());
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 border font-mono text-[9px] font-extrabold uppercase transition-all cursor-pointer select-none rounded-none ${
+                abstractRelationsEnabled
+                  ? 'bg-amber-600 border-amber-600 text-white'
+                  : 'border-theme-comp/40 hover:bg-theme-comp/10 text-theme-text/80 bg-theme-card'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Abstract Relations: {abstractRelationsEnabled ? "ON" : "OFF"}</span>
+            </button>
+
+            <button
+              onClick={() => setScrambleComponentOrder(prev => !prev)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 border font-mono text-[9px] font-extrabold uppercase transition-all cursor-pointer select-none rounded-none ${
+                scrambleComponentOrder
+                  ? 'bg-purple-600 border-purple-600 text-white'
+                  : 'border-theme-comp/40 hover:bg-theme-comp/10 text-theme-text/80 bg-theme-card'
+              }`}
+              title="Scrambles the presentation order of compound/multi-dimensional relations (e.g. East-After-Above-North vs North-East-Above-After)"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              <span>Relation Scrambler: {scrambleComponentOrder ? "ON" : "OFF"}</span>
+            </button>
           </div>
 
           {/* Quick HUD tracker */}
@@ -267,7 +314,7 @@ export default function App() {
 
           <div className="text-[11px] text-theme-text font-mono flex items-center gap-2 border border-theme-comp px-3 py-1.5 bg-theme-card">
             <span className="w-2 h-2 rounded-full bg-green-600 animate-pulse"></span>
-            <span>Current Canvas: <strong>{activeTab === 'training' && workoutMode === 'context' ? contextDimension : dimension}D Coordinate Matrix (I)</strong></span>
+            <span>Current Canvas: <strong>{activeTab === 'training' && (workoutMode === 'context' || workoutMode === 'analogy') ? contextDimension : dimension}D Coordinate Matrix (I)</strong></span>
           </div>
         </div>
 
@@ -291,6 +338,10 @@ export default function App() {
                 onUpdateContextDetails={handleUpdateContextDetails}
                 isSubmitted={isTrainingSubmitted}
                 setIsSubmitted={setIsTrainingSubmitted}
+                abstractRelationsEnabled={abstractRelationsEnabled}
+                abstractMapping={abstractMapping}
+                onRegenerateAbstractMapping={setAbstractMapping}
+                scrambleComponentOrder={scrambleComponentOrder}
               />
             )}
 
@@ -304,6 +355,10 @@ export default function App() {
                 onUpdateBasis={setBasisRelations}
                 solverResult={solverResult}
                 setHighlightedPremiseId={setHighlightedPremiseId}
+                abstractRelationsEnabled={abstractRelationsEnabled}
+                abstractMapping={abstractMapping}
+                onRegenerateAbstractMapping={setAbstractMapping}
+                scrambleComponentOrder={scrambleComponentOrder}
               />
             )}
 
@@ -318,6 +373,13 @@ export default function App() {
           {/* Interactive visualizer right column */}
           {(activeTab === 'training' || activeTab === 'sandbox') && (
             <div className="lg:col-span-5 flex flex-col h-full self-stretch min-h-[400px]">
+              {abstractRelationsEnabled && (
+                <AbstractRelationsCodex
+                  dimension={activeTab === 'training' && (workoutMode === 'context' || workoutMode === 'analogy') ? contextDimension : dimension}
+                  mapping={abstractMapping}
+                  onRegenerate={() => setAbstractMapping(generateAbstractMapping())}
+                />
+              )}
               {activeTab === 'training' && !isTrainingSubmitted ? (
                 <div className="flex flex-col flex-1 border border-dashed border-theme-comp bg-theme-bg/60 p-6 items-center justify-center text-center select-none min-h-[400px] h-full shadow-inner">
                   <Compass className="w-12 h-12 text-theme-comp/30 shrink-0 mb-3 animate-pulse" />
@@ -326,7 +388,7 @@ export default function App() {
                     Submit your answer to this relational deduction query to materialize the spatial network maps.
                   </p>
                 </div>
-              ) : activeTab === 'training' && workoutMode === 'context' ? (
+              ) : activeTab === 'training' && (workoutMode === 'context' || workoutMode === 'analogy') ? (
                 <ContextProjector
                   dimension={contextDimension}
                   baseVector={contextBaseVector}

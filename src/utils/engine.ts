@@ -1,4 +1,4 @@
-import { Vector, Premise, SolverResult, EntityNode, Contradiction, DimensionCount, Puzzle, PuzzleDifficulty } from '../types';
+import { Vector, Premise, SolverResult, EntityNode, Contradiction, DimensionCount, Puzzle, PuzzleDifficulty, AbstractRelationMapping } from '../types';
 
 export const DEFAULT_BASIS_2D: Record<string, Vector> = {
   'NORTH': [1, 0],
@@ -228,25 +228,53 @@ export function solveRelations(
   };
 }
 
-// Describe a vector in terms of base directions
-export function describeVector(vector: Vector, basisRelations: Record<string, Vector>): string {
-  // Try direct match
-  for (const [name, vec] of Object.entries(basisRelations)) {
-    if (vectorsEqual(vector, vec)) {
-      return name;
-    }
+export function getStableHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
   }
+  return hash;
+}
 
-  // Try opposite match
-  const oppositeVec = vecMult(vector, -1);
-  for (const [name, vec] of Object.entries(basisRelations)) {
-    if (vectorsEqual(oppositeVec, vec)) {
-      return `OPPOSITE of ${name}`;
+export function scrambleParts(parts: string[]): string[] {
+  const shuffled = [...parts];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = temp;
+  }
+  return shuffled;
+}
+
+// Describe a vector in terms of base directions
+export function describeVector(
+  vector: Vector,
+  basisRelations: Record<string, Vector>,
+  scramble?: boolean
+): string {
+  const nonZeroCount = vector.filter(val => val !== 0).length;
+
+  if (!scramble || nonZeroCount <= 1) {
+    // Try direct match
+    for (const [name, vec] of Object.entries(basisRelations)) {
+      if (vectorsEqual(vector, vec)) {
+        return name;
+      }
+    }
+
+    // Try opposite match
+    const oppositeVec = vecMult(vector, -1);
+    for (const [name, vec] of Object.entries(basisRelations)) {
+      if (vectorsEqual(oppositeVec, vec)) {
+        return `OPPOSITE of ${name}`;
+      }
     }
   }
 
   // Multi-dimensional breakdown descriptive text
-  const parts: string[] = [];
+  let parts: string[] = [];
   
   vector.forEach((val, idx) => {
     if (val === 0) return;
@@ -271,7 +299,13 @@ export function describeVector(vector: Vector, basisRelations: Record<string, Ve
     }
   });
 
-  return parts.length > 0 ? parts.join(', ') : 'COINCIDENT (Same Position)';
+  if (parts.length === 0) return 'COINCIDENT (Same Position)';
+  if (scramble && parts.length > 1) {
+    parts = scrambleParts(parts);
+    return parts.join('-');
+  }
+
+  return parts.join(', ');
 }
 
 export function generateCVC(): string {
@@ -296,7 +330,8 @@ export function generateTrainerPuzzle(
   dimension: DimensionCount,
   difficulty: PuzzleDifficulty,
   customNodeCount?: number,
-  customScramble?: 'none' | 'partial' | 'full'
+  customScramble?: 'none' | 'partial' | 'full',
+  scrambleComponentOrder?: boolean
 ): Puzzle {
   const basis = getBasisRelations(dimension);
   const basisKeys = Object.keys(basis).filter(k => {
@@ -342,17 +377,22 @@ export function generateTrainerPuzzle(
     // Generate unique ID for each generated premise to adhere to the Premise model
     const prmId = `pzp_gen_${Math.floor(Math.random() * 1000000)}`;
 
+    // If scrambleComponentOrder is true, we should represent the premise relation in its scrambled form!
+    const activeRelation = scrambleComponentOrder
+      ? describeVector(relVec, basis, true)
+      : relation;
+
     // We frame it as either: "child is relation of parent" OR "parent is opposite of child"
     // Let's randomize presentation
     if (Math.random() > 0.4) {
-      premises.push({ id: prmId, entityA: child, relation, entityB: parent });
+      premises.push({ id: prmId, entityA: child, relation: activeRelation, entityB: parent });
     } else {
       // Find opposite relation
       const oppVec = vecMult(relVec, -1);
       let oppRelation = '';
       for (const [k, v] of Object.entries(basis)) {
         if (vectorsEqual(v, oppVec)) {
-          oppRelation = k;
+          oppRelation = scrambleComponentOrder ? describeVector(oppVec, basis, true) : k;
           break;
         }
       }
@@ -360,7 +400,7 @@ export function generateTrainerPuzzle(
       if (oppRelation) {
         premises.push({ id: prmId, entityA: parent, relation: oppRelation, entityB: child });
       } else {
-        premises.push({ id: prmId, entityA: child, relation, entityB: parent });
+        premises.push({ id: prmId, entityA: child, relation: activeRelation, entityB: parent });
       }
     }
     
@@ -397,7 +437,7 @@ export function generateTrainerPuzzle(
   const targetVector = vecSub(nodesCoords[bestA], nodesCoords[bestB]);
 
   // Render a human descriptive answer for the correct relationship
-  const correctAnswerName = describeVector(targetVector, basis);
+  const correctAnswerName = describeVector(targetVector, basis, scrambleComponentOrder);
 
   // Let's generate options
   const options: { relation: string; vector: Vector; isCorrect: boolean }[] = [];
@@ -432,7 +472,7 @@ export function generateTrainerPuzzle(
         return val;
       });
       // Ensure dimensions are safe
-      decoyName = describeVector(decoyVec, basis);
+      decoyName = describeVector(decoyVec, basis, scrambleComponentOrder);
     }
 
     if (decoyName && !usedRels.has(decoyName)) {
@@ -453,7 +493,7 @@ export function generateTrainerPuzzle(
         Array(dimension).fill(0).map((_, i) => (i === 0 ? -1 : 1))
       ];
       fallbackVectors.forEach(fv => {
-        const name = describeVector(fv, basis);
+        const name = describeVector(fv, basis, scrambleComponentOrder);
         if (options.length < 4 && !usedRels.has(name)) {
           options.push({ relation: name, vector: fv, isCorrect: false });
           usedRels.add(name);
@@ -476,8 +516,9 @@ export function generateTrainerPuzzle(
   premises.forEach(p => {
     const coordsA = nodesCoords[p.entityA];
     const coordsB = nodesCoords[p.entityB];
+    const pVec = basis[p.relation] || parseStandardRelation(p.relation, dimension) || Array(dimension).fill(0);
     explainedSteps.push(
-      `• Since **${p.entityA}** is **${p.relation}** of **${p.entityB}**, we have:  \n  $${p.entityA} = ${p.entityB} + [${basis[p.relation].join(', ')}] = (${coordsA.join(', ')})$`
+      `• Since **${p.entityA}** is **${p.relation}** of **${p.entityB}**, we have:  \n  $${p.entityA} = ${p.entityB} + [${pVec.join(', ')}] = (${coordsA.join(', ')})$`
     );
   });
 
@@ -499,3 +540,273 @@ export function generateTrainerPuzzle(
     difficulty
   };
 }
+
+// === ABSTRACT RELATIONS ENGINE HELPERS ===
+
+export function generateAbstractMapping(): AbstractRelationMapping {
+  const words = generateUniqueCVCNames(8);
+  return {
+    '0_pos': words[0],
+    '0_neg': words[1],
+    '1_pos': words[2],
+    '1_neg': words[3],
+    '2_pos': words[4],
+    '2_neg': words[5],
+    '3_pos': words[6],
+    '3_neg': words[7]
+  };
+}
+
+export function describeAbstractVector(
+  vector: Vector,
+  mapping: AbstractRelationMapping,
+  dimension: number,
+  scramble?: boolean
+): string {
+  let parts: string[] = [];
+  
+  for (let idx = 0; idx < dimension; idx++) {
+    const val = vector[idx] || 0;
+    if (val === 0) continue;
+    
+    let baseWord = '';
+    if (val > 0) {
+      baseWord = mapping[`${idx}_pos` as keyof AbstractRelationMapping];
+    } else {
+      baseWord = mapping[`${idx}_neg` as keyof AbstractRelationMapping];
+    }
+    
+    if (Math.abs(val) !== 1) {
+      parts.push(`${baseWord}-Scaled`);
+    } else {
+      parts.push(baseWord);
+    }
+  }
+
+  if (parts.length === 0) return 'COINCIDENT';
+  if (parts.length === 1) return parts[0];
+
+  if (scramble) {
+    parts = scrambleParts(parts);
+  }
+
+  return `[${parts.join('-')}]`;
+}
+
+export function parseAbstractRelation(name: string, mapping: AbstractRelationMapping, dimension: DimensionCount): Vector | null {
+  try {
+    let cleaned = name.trim();
+    if (!cleaned) return null;
+    
+    if (cleaned.startsWith('[') && cleaned.endsWith(']') && cleaned.includes(',')) {
+      return null;
+    }
+    
+    if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+      cleaned = cleaned.slice(1, -1);
+    }
+    
+    const parts = cleaned.split('-');
+    const vector = Array(dimension).fill(0);
+    let matchedAny = false;
+    
+    for (const part of parts) {
+      let isScaled = false;
+      let baseWord = part;
+      if (part.endsWith('_Scaled') || part.endsWith('-Scaled')) {
+        isScaled = true;
+        baseWord = part.slice(0, -7);
+      } else if (part.includes('Scaled')) {
+        isScaled = true;
+        baseWord = part.replace('Scaled', '').replace('-', '').replace('_', '');
+      }
+      
+      let foundKey: string | null = null;
+      for (const [key, word] of Object.entries(mapping)) {
+        if ((word as string).toUpperCase() === baseWord.toUpperCase()) {
+          foundKey = key;
+          break;
+        }
+      }
+      
+      if (foundKey) {
+        matchedAny = true;
+        const [axisStr, dir] = foundKey.split('_');
+        const axisIdx = parseInt(axisStr);
+        if (axisIdx < dimension) {
+          const sign = dir === 'pos' ? 1 : -1;
+          const val = isScaled ? sign * 2 : sign;
+          vector[axisIdx] = val;
+        }
+      }
+    }
+    
+    return matchedAny ? vector : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+export function parseStandardRelation(name: string, dimension: DimensionCount): Vector | null {
+  try {
+    let cleaned = name.trim();
+    if (!cleaned) return null;
+    
+    const basis = getBasisRelations(dimension);
+    if (basis[cleaned]) {
+      return basis[cleaned];
+    }
+    const foundKey = Object.keys(basis).find(k => k.toLowerCase() === cleaned.toLowerCase());
+    if (foundKey) {
+      return basis[foundKey];
+    }
+    
+    const separators = /[-\s,]+/;
+    const parts = cleaned.split(separators);
+    const vector = Array(dimension).fill(0);
+    let matchedAny = false;
+    
+    for (const part of parts) {
+      if (!part) continue;
+      
+      const upperPart = part.toUpperCase();
+      let isScaled = upperPart.endsWith('SCALED') || upperPart.endsWith('SCALED)');
+      let baseWord = upperPart;
+      if (isScaled) {
+        baseWord = upperPart.replace('SCALED', '').replace('-', '').replace('_', '').trim();
+      }
+      
+      if (baseWord === 'NORTH') {
+        vector[0] = isScaled ? 2 : 1;
+        matchedAny = true;
+      } else if (baseWord === 'SOUTH') {
+        vector[0] = isScaled ? -2 : -1;
+        matchedAny = true;
+      } else if (baseWord === 'EAST') {
+        if (dimension > 1) {
+          vector[1] = isScaled ? 2 : 1;
+          matchedAny = true;
+        }
+      } else if (baseWord === 'WEST') {
+        if (dimension > 1) {
+          vector[1] = isScaled ? -2 : -1;
+          matchedAny = true;
+        }
+      } else if (baseWord === 'NORTHEAST') {
+        vector[0] = 1;
+        if (dimension > 1) vector[1] = 1;
+        matchedAny = true;
+      } else if (baseWord === 'NORTHWEST') {
+        vector[0] = 1;
+        if (dimension > 1) vector[1] = -1;
+        matchedAny = true;
+      } else if (baseWord === 'SOUTHEAST') {
+        vector[0] = -1;
+        if (dimension > 1) vector[1] = 1;
+        matchedAny = true;
+      } else if (baseWord === 'SOUTHWEST') {
+        vector[0] = -1;
+        if (dimension > 1) vector[1] = -1;
+        matchedAny = true;
+      } else if (baseWord === 'ABOVE') {
+        if (dimension > 2) {
+          vector[2] = isScaled ? 2 : 1;
+          matchedAny = true;
+        }
+      } else if (baseWord === 'BELOW') {
+        if (dimension > 2) {
+          vector[2] = isScaled ? -2 : -1;
+          matchedAny = true;
+        }
+      } else if (baseWord === 'AFTER') {
+        if (dimension > 3) {
+          vector[3] = isScaled ? 2 : 1;
+          matchedAny = true;
+        }
+      } else if (baseWord === 'BEFORE') {
+        if (dimension > 3) {
+          vector[3] = isScaled ? -2 : -1;
+          matchedAny = true;
+        }
+      }
+    }
+    
+    return matchedAny ? vector : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+export function translateStandardRelationToAbstract(
+  standardName: string,
+  mapping: AbstractRelationMapping,
+  dimension: DimensionCount,
+  scramble?: boolean
+): string {
+  let vec = parseStandardRelation(standardName, dimension);
+  if (vec) {
+    return describeAbstractVector(vec, mapping, dimension, scramble);
+  }
+  return standardName;
+}
+
+export function translateTextToAbstract(
+  text: string,
+  mapping: AbstractRelationMapping,
+  dimension: DimensionCount,
+  scramble?: boolean
+): string {
+  if (!text) return text;
+  let translated = text;
+  
+  const standardBasis = getBasisRelations(dimension);
+  const sortedKeys = Object.keys(standardBasis).sort((a, b) => b.length - a.length);
+  
+  for (const key of sortedKeys) {
+    const vec = standardBasis[key];
+    const abstractName = describeAbstractVector(vec, mapping, dimension, scramble);
+    const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`\\b${escapedKey}\\b`, 'gi');
+    translated = translated.replace(regex, abstractName);
+  }
+  
+  return translated;
+}
+
+export function scrambleStandardRelation(
+  standardName: string,
+  dimension: DimensionCount,
+  scramble?: boolean
+): string {
+  if (!scramble) return standardName;
+  let vec = parseStandardRelation(standardName, dimension);
+  if (vec) {
+    return describeVector(vec, getBasisRelations(dimension), scramble);
+  }
+  return standardName;
+}
+
+export function scrambleTextStandard(
+  text: string,
+  dimension: DimensionCount,
+  scramble?: boolean
+): string {
+  if (!text || !scramble) return text;
+  let scrambled = text;
+  
+  const standardBasis = getBasisRelations(dimension);
+  const sortedKeys = Object.keys(standardBasis).sort((a, b) => b.length - a.length);
+  
+  for (const key of sortedKeys) {
+    const vec = standardBasis[key];
+    const scrambledName = describeVector(vec, standardBasis, scramble);
+    const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`\\b${escapedKey}\\b`, 'gi');
+    scrambled = scrambled.replace(regex, scrambledName);
+  }
+  
+  return scrambled;
+}
+
+
+

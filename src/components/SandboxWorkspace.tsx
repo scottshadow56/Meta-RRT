@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { DimensionCount, Premise, SolverResult, Vector } from '../types';
-import { solveRelations, describeVector, parseVector } from '../utils/engine';
+import { DimensionCount, Premise, SolverResult, Vector, AbstractRelationMapping } from '../types';
+import { solveRelations, describeVector, parseVector, describeAbstractVector } from '../utils/engine';
 import { Plus, Trash2, HelpCircle, Table, ArrowRight, RefreshCw, Layers2, Settings2, ShieldAlert } from 'lucide-react';
 
 interface SandboxWorkspaceProps {
@@ -12,6 +12,10 @@ interface SandboxWorkspaceProps {
   onUpdateBasis: (basis: Record<string, Vector>) => void;
   solverResult: SolverResult;
   setHighlightedPremiseId: (id: string | null) => void;
+  abstractRelationsEnabled: boolean;
+  abstractMapping: AbstractRelationMapping;
+  onRegenerateAbstractMapping: () => void;
+  scrambleComponentOrder?: boolean;
 }
 
 export default function SandboxWorkspace({
@@ -22,7 +26,11 @@ export default function SandboxWorkspace({
   basisRelations,
   onUpdateBasis,
   solverResult,
-  setHighlightedPremiseId
+  setHighlightedPremiseId,
+  abstractRelationsEnabled,
+  abstractMapping,
+  onRegenerateAbstractMapping,
+  scrambleComponentOrder
 }: SandboxWorkspaceProps) {
   // Input builders for adding a relation
   const [entityA, setEntityA] = useState<string>('');
@@ -138,7 +146,9 @@ export default function SandboxWorkspace({
 
     // Displacement vector: nodeA - nodeB
     const displacement = nodeA.coordinates.map((val, idx) => val - (nodeB.coordinates[idx] || 0));
-    const semanticName = describeVector(displacement, basisRelations);
+    const semanticName = abstractRelationsEnabled
+      ? describeAbstractVector(displacement, abstractMapping, dimension, scrambleComponentOrder)
+      : describeVector(displacement, basisRelations, scrambleComponentOrder);
 
     setQueryResult({
       vector: displacement,
@@ -236,7 +246,16 @@ export default function SandboxWorkspace({
                     className="w-full bg-theme-bg border border-theme-comp focus:outline-none focus:bg-theme-bg px-3.5 py-2 text-xs font-mono text-theme-text uppercase rounded-none"
                   />
                   <p className="text-[8px] text-theme-text/70 font-mono leading-tight">
-                    Format: {dimension === 2 ? "[North/South, East/West]" : dimension === 3 ? "[North/South, East/West, Above/Below]" : "[North/South, East/West, Above/Below, After/Before]"}
+                    Format:{' '}
+                    {abstractRelationsEnabled ? (
+                      dimension === 2 ? `[${abstractMapping['0_pos']}/${abstractMapping['0_neg']}, ${abstractMapping['1_pos']}/${abstractMapping['1_neg']}]` :
+                      dimension === 3 ? `[${abstractMapping['0_pos']}/${abstractMapping['0_neg']}, ${abstractMapping['1_pos']}/${abstractMapping['1_neg']}, ${abstractMapping['2_pos']}/${abstractMapping['2_neg']}]` :
+                      `[${abstractMapping['0_pos']}/${abstractMapping['0_neg']}, ${abstractMapping['1_pos']}/${abstractMapping['1_neg']}, ${abstractMapping['2_pos']}/${abstractMapping['2_neg']}, ${abstractMapping['3_pos']}/${abstractMapping['3_neg']}]`
+                    ) : (
+                      dimension === 2 ? "[North/South, East/West]" :
+                      dimension === 3 ? "[North/South, East/West, Above/Below]" :
+                      "[North/South, East/West, Above/Below, After/Before]"
+                    )}
                   </p>
                 </div>
               ) : (
