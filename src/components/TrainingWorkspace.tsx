@@ -1741,16 +1741,25 @@ function translatePuzzleToAbstract(
   dimension: DimensionCount,
   scramble?: boolean
 ): Puzzle {
+  const seen = new Set<string>();
+  const uniqueOptions = puzzle.options.map(o => {
+    let relation = '';
+    let attempts = 0;
+    do {
+      relation = translateStandardRelationToAbstract(o.relation, mapping, dimension, scramble);
+      attempts++;
+    } while (seen.has(relation) && attempts < 50);
+    seen.add(relation);
+    return { ...o, relation };
+  });
+
   return {
     ...puzzle,
     premises: puzzle.premises.map(p => ({
       ...p,
       relation: translateStandardRelationToAbstract(p.relation, mapping, dimension, scramble)
     })),
-    options: puzzle.options.map(o => ({
-      ...o,
-      relation: translateStandardRelationToAbstract(o.relation, mapping, dimension, scramble)
-    })),
+    options: uniqueOptions,
     explanation: translateTextToAbstract(puzzle.explanation, mapping, dimension, scramble)
   };
 }
@@ -1761,6 +1770,18 @@ function translateContextPuzzleToAbstract(
   dimension: DimensionCount,
   scramble?: boolean
 ): ContextPuzzle {
+  const seen = new Set<string>();
+  const uniqueOptions = puzzle.options.map(o => {
+    let text = '';
+    let attempts = 0;
+    do {
+      text = translateStandardRelationToAbstract(o.text, mapping, dimension, scramble);
+      attempts++;
+    } while (seen.has(text) && attempts < 50);
+    seen.add(text);
+    return { ...o, text };
+  });
+
   return {
     ...puzzle,
     nodeDefinitions: puzzle.nodeDefinitions.map(n => ({
@@ -1773,10 +1794,7 @@ function translateContextPuzzleToAbstract(
     })),
     baseRelation: translateStandardRelationToAbstract(puzzle.baseRelation, mapping, dimension, scramble),
     projectedRelation: translateStandardRelationToAbstract(puzzle.projectedRelation, mapping, dimension, scramble),
-    options: puzzle.options.map(o => ({
-      ...o,
-      text: translateStandardRelationToAbstract(o.text, mapping, dimension, scramble)
-    }))
+    options: uniqueOptions
   };
 }
 
@@ -1814,16 +1832,25 @@ function scramblePuzzleStandard(
   scramble?: boolean
 ): Puzzle {
   if (!scramble) return puzzle;
+  const seen = new Set<string>();
+  const uniqueOptions = puzzle.options.map(o => {
+    let relation = '';
+    let attempts = 0;
+    do {
+      relation = scrambleStandardRelation(o.relation, dimension, true);
+      attempts++;
+    } while (seen.has(relation) && attempts < 50);
+    seen.add(relation);
+    return { ...o, relation };
+  });
+
   return {
     ...puzzle,
     premises: puzzle.premises.map(p => ({
       ...p,
       relation: scrambleStandardRelation(p.relation, dimension, true)
     })),
-    options: puzzle.options.map(o => ({
-      ...o,
-      relation: scrambleStandardRelation(o.relation, dimension, true)
-    })),
+    options: uniqueOptions,
     explanation: scrambleTextStandard(puzzle.explanation, dimension, true)
   };
 }
@@ -1834,6 +1861,18 @@ function scrambleContextPuzzleStandard(
   scramble?: boolean
 ): ContextPuzzle {
   if (!scramble) return puzzle;
+  const seen = new Set<string>();
+  const uniqueOptions = puzzle.options.map(o => {
+    let text = '';
+    let attempts = 0;
+    do {
+      text = scrambleStandardRelation(o.text, dimension, true);
+      attempts++;
+    } while (seen.has(text) && attempts < 50);
+    seen.add(text);
+    return { ...o, text };
+  });
+
   return {
     ...puzzle,
     nodeDefinitions: puzzle.nodeDefinitions.map(n => ({
@@ -1846,10 +1885,7 @@ function scrambleContextPuzzleStandard(
     })),
     baseRelation: scrambleStandardRelation(puzzle.baseRelation, dimension, true),
     projectedRelation: scrambleStandardRelation(puzzle.projectedRelation, dimension, true),
-    options: puzzle.options.map(o => ({
-      ...o,
-      text: scrambleStandardRelation(o.text, dimension, true)
-    }))
+    options: uniqueOptions
   };
 }
 

@@ -439,9 +439,12 @@ export function generateTrainerPuzzle(
   // Render a human descriptive answer for the correct relationship
   const correctAnswerName = describeVector(targetVector, basis, scrambleComponentOrder);
 
-  // Let's generate options
+  // Let's generate options with unique underlying vectors and canonical names
   const options: { relation: string; vector: Vector; isCorrect: boolean }[] = [];
-  
+  const usedVectors = new Set<string>([targetVector.join(',')]);
+  const canonicalCorrectName = describeVector(targetVector, basis, false);
+  const usedCanonicalNames = new Set<string>([canonicalCorrectName]);
+
   // 1. Correct option
   options.push({
     relation: correctAnswerName,
@@ -450,17 +453,15 @@ export function generateTrainerPuzzle(
   });
 
   // Calculate decoy options
-  const usedRels = new Set<string>([correctAnswerName]);
-
-  while (options.length < 4) {
+  let loopCount = 0;
+  while (options.length < 4 && loopCount < 100) {
+    loopCount++;
     // Choose a random combination of dimensional values or a random basis relation
     let decoyVec: Vector;
-    let decoyName: string;
 
     if (Math.random() > 0.5) {
       const randomBasisKey = basisKeys[Math.floor(Math.random() * basisKeys.length)];
       decoyVec = basis[randomBasisKey];
-      decoyName = randomBasisKey;
     } else {
       // Perturb target vector
       decoyVec = targetVector.map((val, idx) => {
@@ -471,35 +472,43 @@ export function generateTrainerPuzzle(
         }
         return val;
       });
-      // Ensure dimensions are safe
-      decoyName = describeVector(decoyVec, basis, scrambleComponentOrder);
     }
 
-    if (decoyName && !usedRels.has(decoyName)) {
-      usedRels.add(decoyName);
+    const vecStr = decoyVec.join(',');
+    const canonicalName = describeVector(decoyVec, basis, false);
+
+    if (canonicalName && !usedVectors.has(vecStr) && !usedCanonicalNames.has(canonicalName)) {
+      usedVectors.add(vecStr);
+      usedCanonicalNames.add(canonicalName);
       options.push({
-        relation: decoyName,
+        relation: scrambleComponentOrder ? describeVector(decoyVec, basis, true) : canonicalName,
         vector: decoyVec,
         isCorrect: false
       });
     }
-    
-    // Safety check to avoid infinite loop
-    if (usedRels.size > 12) {
-      // just push hardcoded vectors
-      const fallbackVectors = [
-        Array(dimension).fill(0).map((_, i) => (i === 0 ? 1 : 0)),
-        Array(dimension).fill(0).map((_, i) => (i === 1 ? -1 : 0)),
-        Array(dimension).fill(0).map((_, i) => (i === 0 ? -1 : 1))
-      ];
-      fallbackVectors.forEach(fv => {
-        const name = describeVector(fv, basis, scrambleComponentOrder);
-        if (options.length < 4 && !usedRels.has(name)) {
-          options.push({ relation: name, vector: fv, isCorrect: false });
-          usedRels.add(name);
-        }
-      });
-      break;
+  }
+
+  // Fallbacks if we couldn't get enough unique decoy options
+  if (options.length < 4) {
+    const fallbackVectors = [
+      Array(dimension).fill(0).map((_, i) => (i === 0 ? 1 : 0)),
+      Array(dimension).fill(0).map((_, i) => (i === 1 ? -1 : 0)),
+      Array(dimension).fill(0).map((_, i) => (i === 2 && dimension > 2 ? 1 : (i === 0 ? -1 : 0))),
+      Array(dimension).fill(0).map((_, i) => (i === 3 && dimension > 3 ? -1 : (i === 1 ? 1 : 0)))
+    ];
+    for (const fv of fallbackVectors) {
+      if (options.length >= 4) break;
+      const vecStr = fv.join(',');
+      const canonicalName = describeVector(fv, basis, false);
+      if (canonicalName && !usedVectors.has(vecStr) && !usedCanonicalNames.has(canonicalName)) {
+        usedVectors.add(vecStr);
+        usedCanonicalNames.add(canonicalName);
+        options.push({
+          relation: scrambleComponentOrder ? describeVector(fv, basis, true) : canonicalName,
+          vector: fv,
+          isCorrect: false
+        });
+      }
     }
   }
 
